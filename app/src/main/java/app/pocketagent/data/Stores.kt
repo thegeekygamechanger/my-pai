@@ -45,6 +45,8 @@ data class Settings(
     /** Web search is on for new chats unless the user turns it off (it applies to Claude models). */
     val web: Boolean = true,
     val showThinking: Boolean = true,
+    /** Show the reasoning and the steps (searches, pages, code) behind a reply. Off: only an animated line while it works. */
+    val showWork: Boolean = false,
     val customInstructions: String = "",
     /** When [customInstructions] or the API key last changed here; the newer copy wins between linked devices. */
     val sharedRev: Long = 0,

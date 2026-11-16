@@ -93,7 +93,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -174,9 +183,9 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
 }
 
 @Composable
-fun rememberThumb(path: String): ImageBitmap? {
+fun rememberThumb(path: String, maxPx: Int = 512): ImageBitmap? {
     val platform = LocalGraph.current.platform
-    val bmp by produceState<ImageBitmap?>(null, path) { value = withContext(Dispatchers.IO) { platform.thumbnail(path) } }
+    val bmp by produceState<ImageBitmap?>(null, path, maxPx) { value = withContext(Dispatchers.IO) { platform.thumbnail(path, maxPx) } }
     return bmp
 }
 
@@ -205,7 +214,7 @@ fun UserRow(row: UiRow.User, modifier: Modifier, onCopy: (String) -> Unit, onEdi
             Surface(
                 color = cs.primaryContainer, contentColor = cs.onPrimaryContainer,
                 shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp),
-                modifier = Modifier.clip(RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)).combinedClickable(onClick = {}, onLongClick = { menu = true }),
+                modifier = Modifier.clip(RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)).onSecondaryClick { menu = true }.combinedClickable(onClick = {}, onLongClick = { menu = true }),
             ) {
                 Text(row.text, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge)
             }
@@ -213,6 +222,11 @@ fun UserRow(row: UiRow.User, modifier: Modifier, onCopy: (String) -> Unit, onEdi
                 DropdownMenuItem({ Text("Copy") }, { menu = false; onCopy(row.text) }, leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) })
                 if (canEdit) DropdownMenuItem({ Text("Edit and resend") }, { menu = false; onEdit(row) }, leadingIcon = { Icon(Icons.Rounded.EditNote, null) })
             }
+        }
+        // The same two actions, always in reach under the message.
+        if (row.text.isNotBlank()) Row(Modifier.padding(top = 2.dp)) {
+            IconButton({ onCopy(row.text) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.ContentCopy, "Copy this message", Modifier.size(15.dp), tint = cs.onSurfaceVariant.copy(alpha = 0.75f)) }
+            if (canEdit) IconButton({ onEdit(row) }, Modifier.size(32.dp)) { Icon(Icons.Rounded.Edit, "Edit this message and send it again", Modifier.size(15.dp), tint = cs.onSurfaceVariant.copy(alpha = 0.75f)) }
         }
     }
 }
@@ -270,6 +284,8 @@ fun toolIcon(name: String): ImageVector = when (name) {
     "get_time" -> Icons.Rounded.Schedule
     "copy_to_clipboard" -> Icons.Rounded.ContentPaste
     "memory" -> Icons.Rounded.Bookmark
+    "generate_image" -> Icons.Rounded.Image
+    "generate_video" -> Icons.Rounded.Movie
     "github" -> Icons.Rounded.Code
     "gmail_search", "gmail_read", "gmail_send" -> Icons.Rounded.Email
     else -> Icons.Rounded.Terminal
@@ -279,6 +295,7 @@ fun toolIcon(name: String): ImageVector = when (name) {
 @Composable
 fun ToolRow(row: UiRow.Tool, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
+    if (row.media.isNotEmpty()) { Column(modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) { row.media.forEach { MediaView(it) } }; return }
     val uri = LocalUriHandler.current
     var open by rememberSaveable(row.key) { mutableStateOf(false) }
     val hasDetails = row.input.isNotBlank() || row.result.isNotBlank() || row.sources.isNotEmpty()
@@ -366,7 +383,7 @@ fun SourcesRow(row: UiRow.Sources, modifier: Modifier) {
 }
 
 @Composable
-fun FooterRow(row: UiRow.Footer, modifier: Modifier, onCopy: (String) -> Unit, onShare: (String) -> Unit, onRetry: () -> Unit, busy: Boolean) {
+fun FooterRow(row: UiRow.Footer, modifier: Modifier, onCopy: (String) -> Unit, onRetry: () -> Unit, busy: Boolean) {
     val cs = MaterialTheme.colorScheme
     var copied by remember { mutableStateOf(false) }
     Row(modifier.fillMaxWidth().padding(start = 10.dp, end = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -375,7 +392,6 @@ fun FooterRow(row: UiRow.Footer, modifier: Modifier, onCopy: (String) -> Unit, o
                 Icon(if (done) Icons.Rounded.Check else Icons.Rounded.ContentCopy, "Copy reply", Modifier.size(17.dp), tint = if (done) cs.primary else cs.onSurfaceVariant)
             }
         }
-        IconButton({ onShare(row.text) }, Modifier.size(38.dp)) { Icon(Icons.Rounded.Share, "Share reply", Modifier.size(17.dp), tint = cs.onSurfaceVariant) }
         if (row.last && !busy) IconButton(onRetry, Modifier.size(38.dp)) { Icon(Icons.Rounded.Refresh, "Try again", Modifier.size(18.dp), tint = cs.onSurfaceVariant) }
         Spacer(Modifier.weight(1f))
         Text(
@@ -398,11 +414,40 @@ fun shortModel(id: String): String {
 @Composable
 fun StatusRow(row: UiRow.Status, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
+    val pool = WAITING_WORDS[row.mood] ?: WAITING_WORDS.getValue("think")
+    // A different phrase every couple of seconds, never the same one twice running.
+    var phrase by remember(row.mood) { mutableStateOf(pool.random()) }
+    LaunchedEffect(row.mood) {
+        while (true) {
+            kotlinx.coroutines.delay(2400)
+            phrase = pool.filter { it != phrase }.random()
+        }
+    }
     Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         LoadingIndicator(Modifier.size(30.dp), color = if (row.retrying) cs.tertiary else cs.primary)
-        if (row.text.isNotBlank()) Text(row.text, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+        AnimatedContent(
+            if (row.retrying || row.text.isNotBlank()) row.text else phrase, Modifier.padding(start = 10.dp),
+            transitionSpec = { (slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut()) }, label = "phrase",
+        ) { words -> Text(words, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant) }
     }
 }
+
+/** What the waiting line says, by what is going on. Plain phrases that say something, rather than "Working". */
+private val WAITING_WORDS = mapOf(
+    "think" to listOf(
+        "Thinking it through", "Connecting the dots", "Turning it over", "Weighing the options", "Piecing it together", "Finding the right words",
+        "Looking at it from all sides", "Sorting the ideas", "Getting to the point", "Lining up the facts", "Shaping an answer", "Giving it some thought",
+        "Joining the pieces", "Untangling it", "Polishing the reply", "Reading between the lines", "Checking the logic", "Almost there",
+    ),
+    "search" to listOf(
+        "Looking it up", "Checking the latest", "Scanning the web", "Following the trail", "Gathering sources", "Reading the headlines",
+        "Cross-checking facts", "Digging a little deeper", "Hunting for details", "Comparing what's out there", "Finding fresh news", "Sifting the results",
+    ),
+    "read" to listOf("Reading closely", "Going through the page", "Picking out what matters", "Skimming the fine print", "Taking notes", "Pulling out the key points"),
+    "image" to listOf("Sketching it out", "Mixing the colours", "Setting the light", "Adding the details", "Framing the shot", "Painting pixels", "Finishing touches"),
+    "video" to listOf("Setting the scene", "Rolling the camera", "Directing the shot", "Cutting it together", "Adding the sound", "Rendering frames", "This takes a minute"),
+    "work" to listOf("On it", "Getting it done", "Going step by step", "Handling the details", "Putting things in place", "Making progress", "Ticking things off", "Nearly through"),
+)
 
 /** The agent's checklist, pinned above the composer. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -504,4 +549,64 @@ fun pulse(): Float {
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.padding(start = 4.dp, bottom = 8.dp, top = 4.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+}
+
+/** The searches, pages and code behind a reply as one quiet line; tapping it shows each step. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun StepsRow(row: UiRow.Steps, modifier: Modifier) {
+    val cs = MaterialTheme.colorScheme
+    var open by rememberSaveable(row.key) { mutableStateOf(false) }
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = 0.7f, stiffness = 400f), label = "chevron")
+    Column(modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = 0.85f, stiffness = 380f))) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 3.dp).clip(CircleShape).clickable { open = !open }.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (row.active) LoadingIndicator(Modifier.size(22.dp), color = cs.primary)
+            else Icon(toolIcon(row.items.firstOrNull { it.name == "web_search" || it.name == "web_fetch" }?.name ?: row.items.first().name), null, Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+            Text(row.summary, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Rounded.ExpandMore, if (open) "Hide the steps" else "Show the steps", Modifier.padding(start = 2.dp).size(18.dp).rotate(turn), tint = cs.onSurfaceVariant)
+        }
+        if (open) row.items.forEach { ToolRow(it, Modifier) }
+    }
+}
+
+/** A picture or video the assistant created: the picture itself, or a card that plays the video in the device's player. */
+@Composable
+private fun MediaView(made: Attachment) {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    val file = remember(made.path) { g.attach.file(made.path) }
+    Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+        if (made.kind == "image") {
+            val bmp = rememberThumb(made.path, 1600)
+            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.widthIn(max = 520.dp).clip(MaterialTheme.shapes.large).clickable { g.platform.openFile(file) }) {
+                if (bmp != null) Image(bmp, "Created picture. Opens in full size.", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Image, null, tint = cs.onSurfaceVariant) }
+            }
+        } else Surface(onClick = { g.platform.openFile(file) }, shape = MaterialTheme.shapes.large, color = cs.inverseSurface, modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().height(200.dp)) {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Surface(shape = CircleShape, color = cs.primary, modifier = Modifier.size(56.dp)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(32.dp), tint = cs.onPrimary) } }
+                Text("Play video", Modifier.padding(top = 10.dp), style = MaterialTheme.typography.labelLarge, color = cs.inverseOnSurface)
+            }
+        }
+        Row(Modifier.padding(top = 2.dp)) {
+            TextButton({ g.platform.openFile(file) }) { Text("Open") }
+            TextButton({ g.platform.shareFile(file) }) { Text(if (g.platform.isDesktop) "Show in folder" else "Share") }
+        }
+    }
+}
+
+/** A click with the right mouse button, which on a computer does what a long press does on a phone. */
+fun Modifier.onSecondaryClick(action: () -> Unit): Modifier = pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+            if (event.type == androidx.compose.ui.input.pointer.PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                event.changes.forEach { it.consume() }
+                action()
+            }
+        }
+    }
 }

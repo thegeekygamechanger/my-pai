@@ -8,34 +8,62 @@
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-device="desktop">
 <div class="wrap">
 <header>
   <a class="mark" href="index.html"><img src="icon.png" alt="">Pocket Agent</a>
-  <nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="https://github.com/thegeekygamechanger/pocket-agent">Source</a></nav>
+  <nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a class="pill" href="https://github.com/thegeekygamechanger/pocket-agent/releases/latest">Download</a></nav>
 </header>
 <section class="hero">
-  <h1>Pocket Agent</h1>
-  <p>Chat with AI, or hand it work and let it get on with it. On your phone and your computer, with your own keys.</p>
+  <h1>AI that gets on with it.</h1>
+  <p>Chat, or hand over a piece of work. Your own keys, on every device.</p>
   <div class="buttons">
     <a class="btn primary" href="https://github.com/thegeekygamechanger/pocket-agent/releases/latest">Download</a>
     <a class="btn" href="https://github.com/thegeekygamechanger/pocket-agent">View source</a>
   </div>
+  <div class="switch" role="tablist" aria-label="Show the app on">
+    <span class="thumb"></span>
+    <button role="tab" data-show="desktop">Desktop</button>
+    <button role="tab" data-show="android">Android</button>
+  </div>
+  <figure class="shot"><img class="desktop" src="shots/d-home.jpg" alt="The first screen, on a computer" loading="lazy"><img class="android" src="shots/a-home.jpg" alt="The first screen, on a phone" loading="lazy"></figure>
+</section>
+<section class="feature">
+  <div><h2>Ask anything</h2><p>Clear answers, with web search, images and PDFs.</p></div>
+  <figure class="shot"><img class="desktop" src="shots/d-chat.jpg" alt="A chat, on a computer" loading="lazy"><img class="android" src="shots/a-chat.jpg" alt="A chat, on a phone" loading="lazy"></figure>
+</section>
+<section class="feature flip">
+  <div><h2>Hand over the work</h2><p>It plans, uses files, the web, GitHub and Gmail, and asks before it changes anything.</p></div>
+  <figure class="shot"><img class="desktop" src="shots/d-work.jpg" alt="A piece of work in progress, on a computer" loading="lazy"><img class="android" src="shots/a-work.jpg" alt="A piece of work in progress, on a phone" loading="lazy"></figure>
+</section>
+<section class="feature">
+  <div><h2>Any model, your keys</h2><p>Claude, OpenAI, OpenRouter, Groq, Gemini and more. No account with us.</p></div>
+  <figure class="shot"><img class="desktop" src="shots/d-models.jpg" alt="Choosing a model, on a computer" loading="lazy"><img class="android" src="shots/a-models.jpg" alt="Choosing a model, on a phone" loading="lazy"></figure>
 </section>
 <section class="grid">
-  <div><h3>Your keys</h3><p>Claude, OpenAI, OpenRouter, Groq, Gemini and more. Paste a key and go.</p></div>
-  <div><h3>Chat and Work</h3><p>Ask a question, or give it a task with files, web search, GitHub and Gmail.</p></div>
-  <div><h3>Every device</h3><p>Android, Windows and Linux, kept in step with encrypted sync.</p></div>
-  <div><h3>Yours alone</h3><p>No account, no ads, no tracking. Everything stays on your devices.</p></div>
-</section>
-<section class="note">
-  <h2>Free and open source</h2>
-  <p>Released under the MIT licence. Read the code, build it yourself, change it, share it.</p>
+  <div><h3>Every device</h3><p>Android, Windows and Linux, in step through encrypted sync.</p></div>
+  <div><h3>Yours alone</h3><p>No ads, no tracking. Everything stays on your devices.</p></div>
+  <div><h3>On a schedule</h3><p>Set a task once and let it run by itself.</p></div>
+  <div><h3>Open source</h3><p>MIT licence. Read it, build it, change it.</p></div>
 </section>
 <footer>
-  <a href="terms.html">Terms of use</a><a href="privacy.html">Privacy</a><a href="https://github.com/thegeekygamechanger/pocket-agent">Source code</a><a href="https://github.com/thegeekygamechanger/pocket-agent/blob/main/LICENSE">MIT licence</a>
+  <a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a href="https://github.com/thegeekygamechanger/pocket-agent">GitHub</a>
   <p>Pocket Agent is open-source software, not affiliated with Anthropic, OpenAI, Google or any other AI service. Their product names are trademarks of their owners.</p>
 </footer>
 </div>
+<script>
+// Shows the computer or the phone pictures. The choice is remembered; a narrow screen starts on the phone.
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('device'); } catch (e) {}
+  function show(device) {
+    document.body.dataset.device = device;
+    document.querySelectorAll('.switch button').forEach(function (b) { b.setAttribute('aria-selected', b.dataset.show === device); });
+    try { localStorage.setItem('device', device); } catch (e) {}
+  }
+  document.querySelectorAll('.switch button').forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.show); }); });
+  show(saved || (window.matchMedia('(max-width: 700px)').matches ? 'android' : 'desktop'));
+})();
+</script>
 </body>
 </html>

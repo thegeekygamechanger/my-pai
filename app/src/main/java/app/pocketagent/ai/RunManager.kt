@@ -404,7 +404,8 @@ class RunManager(
                     !approved(chatId, chat, id, name, input) -> ToolOutcome("The person declined this action. Do not try it again; ask what they would like instead.", true)
                     else -> {
                         setState(chatId) { it.copy(phase = Phase.TOOL, runningTool = id) }
-                        withContext(Dispatchers.IO) { tools.run(chatId, name, input) }
+                        // Interruptible, so Stop also ends a long wait such as a video being made.
+                        kotlinx.coroutines.runInterruptible(Dispatchers.IO) { tools.run(chatId, name, input) }
                     }
                 }
                 results[id] = toolResult(id, outcome)

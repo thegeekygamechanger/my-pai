@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import app.pocketagent.ai.Media
 
 data class Attachment(val kind: String, val path: String, val title: String)
 data class Source(val title: String, val url: String)
@@ -33,12 +34,17 @@ sealed interface UiRow {
     data class Tool(
         override val key: String, val id: String, val name: String, val title: String, val server: Boolean,
         val state: ToolState, val input: String, val result: String, val sources: List<Source> = emptyList(),
+        /** Pictures or videos this step created, shown in the chat. */
+        val media: List<Attachment> = emptyList(),
     ) : UiRow
+    /** Searches, pages and code behind a reply, folded into one line. */
+    data class Steps(override val key: String, val summary: String, val active: Boolean, val items: List<Tool>) : UiRow
     data class Note(override val key: String, val text: String, val error: Boolean) : UiRow
     data class Sources(override val key: String, val sources: List<Source>) : UiRow
     /** Copy / retry actions under the last reply of a turn. */
     data class Footer(override val key: String, val text: String, val model: String, val tokens: Long, val last: Boolean) : UiRow
-    data class Status(override val key: String, val text: String, val retrying: Boolean) : UiRow
+    /** The line shown while a reply is on its way. [mood] picks the words it cycles through: think, search, read, image, video, work. */
+    data class Status(override val key: String, val text: String, val retrying: Boolean, val mood: String = "think") : UiRow
 }
 
 /** A stored message, already parsed. Parsing is cached per message because rows are rebuilt on every change. */
@@ -88,6 +94,7 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
                     val key = if (m.apiId.isNotEmpty()) "a${m.apiId}" else "m${m.id}"
                     val before = rows.size
                     assistantRows(key, RequestBuilder.effective(p.content).mapNotNull { it.asObj() }, p.content, results, run, showThinking, rows)
+                    compact(rows, before, showThinking)
                     // The footer goes under the last reply of a turn: the next stored message is a real user message, or there is none.
                     val next = all.getOrNull(index + 1)
                     val turnEnds = next == null || (next.msg.role == "user" && next.content.any { it.str("type") != "tool_result" }) || next.msg.role == "note"
@@ -110,8 +117,12 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
         val liveId = run.apiId
         val liveSaved = liveId.isNotEmpty() && messages.any { it.apiId == liveId }
         if (!liveSaved && run.live.isNotEmpty()) liveRows(if (liveId.isNotEmpty()) "a$liveId" else "live", run, showThinking, rows)
+        compact(rows, 0, showThinking)
+        val last = run.live.lastOrNull()
+        val writing = !liveSaved && last != null && last.type == "text" && !last.done
         if (run.phase == Phase.RETRYING) rows += UiRow.Status("status", run.status, true)
-        else if (run.phase == Phase.CONNECTING && (run.live.isEmpty() || liveSaved)) rows += UiRow.Status("status", "", false)
+        // Unless words are arriving right now, or the person is being asked something, one animated line says it is on its way.
+        else if (!writing && run.pending == null && run.phase != Phase.APPROVAL) rows += UiRow.Status("status", "", false, mood(run))
         return rows
     }
 
@@ -146,7 +157,8 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
                         run != null -> ToolState.RUNNING
                         else -> ToolState.ERROR
                     }
-                    rows += UiRow.Tool("$key:$i", id, name, describe(name, input), false, state, pretty(input), saved?.first ?: pending?.text.orEmpty())
+                    val result = saved?.first ?: pending?.text.orEmpty()
+                    rows += UiRow.Tool("$key:$i", id, name, describe(name, input), false, state, pretty(input), result, media = if (state == ToolState.DONE) mediaIn(result) else emptyList())
                 }
                 "server_tool_use", "mcp_tool_use" -> {
                     val id = b.str("id").orEmpty()
@@ -182,7 +194,7 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
                         run.pending?.toolUseId == b.id -> ToolState.WAITING
                         else -> ToolState.RUNNING
                     }
-                    rows += UiRow.Tool("$key:$i", b.id, b.name, describe(b.name, input), false, state, if (b.done) pretty(input) else b.inputPreview, outcome?.text.orEmpty())
+                    rows += UiRow.Tool("$key:$i", b.id, b.name, describe(b.name, input), false, state, if (b.done) pretty(input) else b.inputPreview, outcome?.text.orEmpty(), media = if (state == ToolState.DONE) mediaIn(outcome?.text.orEmpty()) else emptyList())
                 }
                 "server_tool_use", "mcp_tool_use" -> {
                     val input = parseObject(b.inputPreview) ?: JsonObject(emptyMap())
@@ -193,6 +205,64 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
             }
         }
     }
+
+    /**
+     * Tidies the rows of one reply from [from] on. Searching, opening pages and running code are how an
+     * answer gets made, not the answer: every unbroken stretch of them becomes one quiet line that can be
+     * opened, and the reasoning around them becomes one line too, instead of a card for every step.
+     */
+    /** Which family of words the waiting line should use, from what is happening at this moment. */
+    private fun mood(run: RunState): String {
+        val now = run.live.firstOrNull { it.id.isNotEmpty() && it.id == run.runningTool } ?: run.live.lastOrNull { it.type.endsWith("tool_use") && !it.done } ?: run.live.lastOrNull()
+        return when (now?.name) {
+            Media.IMAGE -> "image"
+            Media.VIDEO -> "video"
+            "web_search" -> "search"
+            "web_fetch" -> "read"
+            null, "", "code_execution", "bash_code_execution", "text_editor_code_execution" -> if (run.phase == Phase.TOOL) "work" else "think"
+            else -> "work"
+        }
+    }
+
+    /** @param show whether the person asked to see the working; otherwise the steps are left out altogether */
+    private fun compact(rows: MutableList<UiRow>, from: Int, show: Boolean) {
+        val out = ArrayList<UiRow>()
+        var i = from
+        while (i < rows.size) {
+            val r = rows[i]
+            // A picture or video that was made is shown by itself; the making of it is not.
+            if (r is UiRow.Tool && (r.name == Media.IMAGE || r.name == Media.VIDEO)) { if (r.media.isNotEmpty() || (show && r.state == ToolState.ERROR)) out += r; i++; continue }
+            if (!(r is UiRow.Thinking || (r is UiRow.Tool && r.server))) { out += r; i++; continue }
+            var j = i
+            while (j < rows.size && rows[j].let { it is UiRow.Thinking || (it is UiRow.Tool && it.server) }) j++
+            val stretch = rows.subList(i, j)
+            val thoughts = stretch.filterIsInstance<UiRow.Thinking>()
+            val steps = stretch.filterIsInstance<UiRow.Tool>()
+            if (thoughts.isNotEmpty()) out += UiRow.Thinking(thoughts.first().key, thoughts.joinToString("\n\n") { it.text.trim() }, thoughts.last().active && steps.none { it.state == ToolState.RUNNING })
+            if (show && steps.isNotEmpty()) out += UiRow.Steps(steps.first().key + "s", stepsSummary(steps), steps.any { it.state == ToolState.RUNNING }, steps)
+            i = j
+        }
+        while (rows.size > from) rows.removeAt(rows.size - 1)
+        rows += out
+    }
+
+    private fun stepsSummary(steps: List<UiRow.Tool>): String {
+        steps.lastOrNull { it.state == ToolState.RUNNING }?.let { now ->
+            return when (now.name) { "web_search" -> "Searching the web"; "web_fetch" -> "Reading a page"; else -> "Working it out" }
+        }
+        val searches = steps.count { it.name == "web_search" }
+        val pages = steps.count { it.name == "web_fetch" && it.state == ToolState.DONE }
+        val parts = listOfNotNull(
+            when { searches == 1 -> "searched the web"; searches > 1 -> "searched the web $searches times"; else -> null },
+            when { pages == 1 -> "read 1 page"; pages > 1 -> "read $pages pages"; else -> null },
+        )
+        return parts.joinToString(" · ").replaceFirstChar { it.uppercase() }.ifEmpty { "Worked it out" }
+    }
+
+    private fun mediaIn(result: String): List<Attachment> = Media.REF.findAll(result).map { hit ->
+        val name = hit.groupValues[1]
+        Attachment(if (name.endsWith(".mp4") || name.endsWith(".webm") || name.endsWith(".mov")) "video" else "image", "att/$name", name)
+    }.toList()
 
     private fun pretty(o: JsonObject): String = if (o.isEmpty()) "" else runCatching { PrettyJson.encodeToString(JsonObject.serializer(), o) }.getOrDefault(o.toString()).take(4000)
 

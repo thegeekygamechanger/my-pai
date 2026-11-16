@@ -1,6 +1,7 @@
 package app.pocketagent.ui
 
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,11 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.MailOutline
+import androidx.compose.material.icons.rounded.Newspaper
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ShowChart
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
@@ -53,6 +59,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,18 +73,32 @@ import java.util.UUID
 
 private val DAYS = listOf("1" to "Mon", "2" to "Tue", "3" to "Wed", "4" to "Thu", "5" to "Fri", "6" to "Sat", "7" to "Sun")
 
+/** A ready-made task the person can add with one tap and then adjust. */
+private class Idea(val icon: ImageVector, val needs: String?, val task: Schedule)
+
+private fun idea(icon: ImageVector, title: String, prompt: String, hour: Int, minute: Int = 0, repeat: String = "daily", agent: Boolean = false, needs: String? = null) =
+    Idea(icon, needs, Schedule("", title, prompt, agent, hour, minute, repeat))
+
+private val IDEAS = listOf(
+    idea(Icons.Rounded.Newspaper, "Morning news brief", "Search the web and give me today's top news from India and the world in seven short points, each with its source.", 8),
+    idea(Icons.Rounded.MailOutline, "Unread mail summary", "@Gmail\nSummarise my unread mail from the last day: who wrote, what they want, and which ones need a reply from me.", 9, agent = true, needs = "Gmail"),
+    idea(Icons.Rounded.Code, "Weekly GitHub report", "@GitHub\nSummarise the last week across my repositories: new commits, open pull requests, and issues that need my attention.", 10, repeat = "weekly", agent = true, needs = "GitHub"),
+    idea(Icons.Rounded.ShowChart, "Markets at close", "Search the web and tell me how the Sensex and Nifty closed today and the main reasons, in five short points.", 16, 30, repeat = "weekdays"),
+    idea(Icons.Rounded.WbSunny, "Plan for the day", "Search the web for today's weather where I live, then give me a short plan for the day: three priorities and one thing worth learning.", 7),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ScheduleDialog(initial: Schedule?, onDismiss: () -> Unit, onSave: (Schedule) -> Unit) {
-    var title by remember { mutableStateOf(initial?.title.orEmpty()) }
-    var prompt by remember { mutableStateOf(initial?.prompt.orEmpty()) }
-    var agent by remember { mutableStateOf(initial?.agent ?: false) }
-    var repeat by remember { mutableStateOf(initial?.repeat ?: "daily") }
-    var weekday by remember { mutableStateOf((initial?.weekday ?: 1).toString()) }
-    val time = rememberTimePickerState(initial?.hour ?: 9, initial?.minute ?: 0, is24Hour = true)
+private fun ScheduleDialog(initial: Schedule, fresh: Boolean, onDismiss: () -> Unit, onSave: (Schedule) -> Unit) {
+    var title by remember { mutableStateOf(initial.title) }
+    var prompt by remember { mutableStateOf(initial.prompt) }
+    var agent by remember { mutableStateOf(initial.agent) }
+    var repeat by remember { mutableStateOf(initial.repeat) }
+    var weekday by remember { mutableStateOf(initial.weekday.toString()) }
+    val time = rememberTimePickerState(initial.hour, initial.minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "New scheduled task" else "Edit task") },
+        title = { Text(if (fresh) "New scheduled task" else "Edit task") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(title, { title = it.take(60) }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true, shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
@@ -93,7 +114,8 @@ private fun ScheduleDialog(initial: Schedule?, onDismiss: () -> Unit, onSave: (S
         },
         confirmButton = {
             TextButton({
-                onSave((initial ?: Schedule(UUID.randomUUID().toString(), "", "")).copy(
+                onSave(initial.copy(
+                    id = if (fresh) UUID.randomUUID().toString() else initial.id,
                     title = title.trim().ifEmpty { prompt.trim().take(40) }, prompt = prompt.trim(), agent = agent, hour = time.hour, minute = time.minute,
                     repeat = repeat, weekday = weekday.toInt(), enabled = true, lastRun = 0, createdAt = System.currentTimeMillis(),
                 ))
@@ -114,44 +136,67 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
     val settings by g.settings.collectAsState()
     val list = settings?.schedules.orEmpty()
     var editing by remember { mutableStateOf<Schedule?>(null) }
-    var adding by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf<Schedule?>(null) }
     fun save(change: (List<Schedule>) -> List<Schedule>) { scope.launch { g.settingsStore.update { it.copy(schedules = change(it.schedules)) }; g.scheduler.arm() } }
+    // Ideas that fit this person: ones for an account appear only when that account is connected, and an idea goes away once it is added.
+    val connected = remember(settings?.sharedRev) { listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }) }
+    val ideas = IDEAS.filter { i -> (i.needs == null || i.needs in connected) && list.none { it.title == i.task.title } }
 
-    Column(Modifier.fillMaxSize().background(cs.surface).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
-            Text("Scheduled tasks", Modifier.weight(1f).padding(start = 6.dp), style = MaterialTheme.typography.titleLarge)
-            FilledTonalIconButton({ adding = true }, Modifier.padding(end = 6.dp)) { Icon(Icons.Rounded.Add, "New scheduled task") }
-        }
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            if (list.isEmpty()) Column(Modifier.fillMaxSize().padding(horizontal = 32.dp).padding(bottom = 80.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Box(Modifier.size(88.dp).background(cs.secondaryContainer, MaterialShapes.Clover4Leaf.toShape()), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Schedule, null, Modifier.size(34.dp), tint = cs.onSecondaryContainer)
-                }
-                Text("Nothing scheduled", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge)
-                Text(
-                    if (g.platform.isDesktop) "Have a chat or a piece of work run by itself at a set time. On a computer, tasks run while the app is open."
-                    else "Have a chat or a piece of work run by itself at a set time. The result arrives as a chat, with a notification.",
-                    Modifier.padding(top = 6.dp).widthIn(max = 360.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
-                )
-            } else LazyColumn(Modifier.widthIn(max = 720.dp).fillMaxSize().navigationBarsPadding(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(list, key = { it.id }) { s ->
-                    Surface(onClick = { editing = s }, shape = MaterialTheme.shapes.extraLarge, color = cs.surfaceContainerLow, modifier = Modifier.fillMaxWidth().animateItem(placementSpec = spring(dampingRatio = 0.8f, stiffness = 350f))) {
-                        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if (s.agent) Icons.Rounded.AutoAwesome else Icons.Rounded.ChatBubbleOutline, null, Modifier.size(22.dp), tint = cs.primary)
-                            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                                Text(s.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(Scheduler.describe(s) + if (s.repeat == "once" && s.lastRun > 0) " · done" else "", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+    Box(Modifier.fillMaxSize().background(cs.surface)) {
+        AppBackdrop(Modifier.matchParentSize())
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
+                Text("Scheduled tasks", Modifier.weight(1f).padding(start = 6.dp), style = MaterialTheme.typography.titleLarge)
+                FilledTonalIconButton({ adding = Schedule("", "", "") }, Modifier.padding(end = 6.dp)) { Icon(Icons.Rounded.Add, "New scheduled task") }
+            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                LazyColumn(Modifier.widthIn(max = 720.dp).fillMaxSize().navigationBarsPadding(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (list.isEmpty()) item(key = "empty") {
+                        Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp).animateItem(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(80.dp).background(cs.secondaryContainer, MaterialShapes.Clover4Leaf.toShape()), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.Schedule, null, Modifier.size(32.dp), tint = cs.onSecondaryContainer)
                             }
-                            IconButton({ scope.launch { g.scheduler.runNow(s.id)?.let(onOpenChat) } }) { Icon(Icons.Rounded.PlayArrow, "Run ${s.title} now") }
-                            IconButton({ save { l -> l.filter { it.id != s.id } } }) { Icon(Icons.Rounded.DeleteOutline, "Delete ${s.title}", tint = cs.onSurfaceVariant) }
-                            Switch(s.enabled, { on -> save { l -> l.map { if (it.id == s.id) it.copy(enabled = on, createdAt = if (on) System.currentTimeMillis() else it.createdAt, lastRun = if (on && it.repeat == "once") 0 else it.lastRun) else it } } })
+                            Text("Nothing scheduled", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                if (g.platform.isDesktop) "Tasks run by themselves while the app is open." else "Tasks run by themselves and notify you when done.",
+                                Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                    items(list, key = { it.id }) { s ->
+                        Surface(onClick = { editing = s }, shape = MaterialTheme.shapes.extraLarge, color = cs.surfaceContainerLow.copy(alpha = 0.86f), modifier = Modifier.fillMaxWidth().animateItem(placementSpec = spring(dampingRatio = 0.8f, stiffness = 350f))) {
+                            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (s.agent) Icons.Rounded.AutoAwesome else Icons.Rounded.ChatBubbleOutline, null, Modifier.size(22.dp), tint = cs.primary)
+                                Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                                    Text(s.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(Scheduler.describe(s) + if (s.repeat == "once" && s.lastRun > 0) " · done" else "", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                }
+                                IconButton({ scope.launch { g.scheduler.runNow(s.id)?.let(onOpenChat) } }) { Icon(Icons.Rounded.PlayArrow, "Run ${s.title} now") }
+                                IconButton({ save { l -> l.filter { it.id != s.id } } }) { Icon(Icons.Rounded.DeleteOutline, "Delete ${s.title}", tint = cs.onSurfaceVariant) }
+                                Switch(s.enabled, { on -> save { l -> l.map { if (it.id == s.id) it.copy(enabled = on, createdAt = if (on) System.currentTimeMillis() else it.createdAt, lastRun = if (on && it.repeat == "once") 0 else it.lastRun) else it } } })
+                            }
+                        }
+                    }
+                    if (ideas.isNotEmpty()) item(key = "ideas") {
+                        Text("Suggestions", Modifier.padding(start = 8.dp, top = 14.dp, bottom = 2.dp).animateItem(), style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
+                    }
+                    items(ideas, key = { "idea:" + it.task.title }) { i ->
+                        Surface(onClick = { adding = i.task }, shape = MaterialTheme.shapes.extraLarge, color = cs.surface.copy(alpha = 0.6f), border = BorderStroke(1.dp, cs.outlineVariant), modifier = Modifier.fillMaxWidth().animateItem(placementSpec = spring(dampingRatio = 0.8f, stiffness = 350f))) {
+                            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(i.icon, null, Modifier.size(22.dp), tint = cs.primary)
+                                Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                                    Text(i.task.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(Scheduler.describe(i.task), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                }
+                                Icon(Icons.Rounded.Add, "Add ${i.task.title}", Modifier.padding(end = 8.dp).size(20.dp), tint = cs.onSurfaceVariant)
+                            }
                         }
                     }
                 }
             }
         }
     }
-    if (adding) ScheduleDialog(null, { adding = false }) { s -> adding = false; save { it + s } }
-    editing?.let { e -> ScheduleDialog(e, { editing = null }) { s -> editing = null; save { l -> l.map { if (it.id == s.id) s else it } } } }
+    adding?.let { a -> ScheduleDialog(a, true, { adding = null }) { s -> adding = null; save { it + s } } }
+    editing?.let { e -> ScheduleDialog(e, false, { editing = null }) { s -> editing = null; save { l -> l.map { if (it.id == s.id) s else it } } } }
 }

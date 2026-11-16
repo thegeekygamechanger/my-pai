@@ -47,7 +47,9 @@ fun main(args: Array<String>) {
         for (s in args.drop(2).ifEmpty { listOf("wait:2500", "first") }) when {
             s.startsWith("wait:") -> settle(s.removePrefix("wait:").toLong())
             s.startsWith("key=") -> {
-                val (service, value) = s.removePrefix("key=").split(':', limit = 2)
+                val (service, given) = s.removePrefix("key=").split(':', limit = 2)
+                // "env:NAME" takes the key from an environment variable, so a real one never appears on a command line.
+                val value = if (given.startsWith("env:")) System.getenv(given.removePrefix("env:")).orEmpty() else given
                 graph.vault.write(app.pocketagent.ai.Providers.vaultKey(service), value)
                 graph.settingsStore.update { it.copy(onboarded = true, provider = service, name = "Sam") }
                 settle(600)

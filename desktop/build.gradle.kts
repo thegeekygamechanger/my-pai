@@ -13,7 +13,7 @@ plugins {
 }
 
 // Keep in step with versionName in app/build.gradle.kts.
-val appVersion = "1.0.0"
+val appVersion = "1.1.0"
 
 // Android-only files: each has a counterpart in this module under a different file name, or is not needed here.
 val androidOnly = listOf(
@@ -60,6 +60,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.1.0")
     // QR codes for linking devices. Apache-2.0, no network.
     implementation("com.google.zxing:core:3.5.4")
+    // Voice typing that runs on the computer itself, for people with no speech-to-text key.
+    implementation("com.alphacephei:vosk:0.3.45")
 }
 
 compose.desktop {

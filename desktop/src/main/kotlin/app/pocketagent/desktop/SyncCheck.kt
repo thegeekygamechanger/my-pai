@@ -5,6 +5,7 @@ import app.pocketagent.ai.Providers
 import app.pocketagent.data.Chat
 import app.pocketagent.data.Msg
 import app.pocketagent.sync.ShareClient
+import app.pocketagent.sync.ShareCode
 import app.pocketagent.sync.ShareHost
 import app.pocketagent.sync.SyncCode
 import kotlinx.coroutines.Dispatchers
@@ -167,8 +168,24 @@ fun main(args: Array<String>) {
         val stranger = device("stranger")
         val host = ShareHost(a, first).also { it.start() }
         delay(600)
-        check("a share code is not a sync code", !stranger.sync.join(SyncCode.qr(host.code, SyncCode.SHARE)))
-        val got = ShareClient.open(stranger, host.code)
+        check("a share code is four letters and digits, with both", host.code.length == 4 && host.code.any { it.isLetter() } && host.code.any { it.isDigit() } && host.code.all { it.isLetterOrDigit() })
+        check("it is found inside a pasted message, and alone", ShareCode.find("here you go pocketagent-share:${host.code.lowercase()} thanks")?.groupValues?.get(1)?.uppercase() == host.code && ShareCode.parse(" ${host.code} ") == host.code)
+        check("an ordinary word or number is not a code", ShareCode.parse("GOOD") == null && ShareCode.parse("2026") == null && ShareCode.parse("AB2") == null && ShareCode.find("pocketagent-share:ABCD2") == null)
+        check("a share code is not a sync code", !stranger.sync.join(ShareCode.text(host.code)))
+        val wrong = generateSequence { ShareCode.new() }.first { it != host.code }
+        check("a wrong code reaches nobody", kotlinx.coroutines.withTimeoutOrNull(4000) { ShareClient.fetch(device("guesser"), wrong) } == null)
+        // Someone who learns the code afterwards and has a recording still cannot read the chat: the key was agreed afresh and is gone.
+        val k1 = app.pocketagent.sync.ShareSession.keyPair(); val k2 = app.pocketagent.sync.ShareSession.keyPair(); val wrap = ShareCode.derive(host.code).key
+        val s1 = app.pocketagent.sync.ShareSession.key(k1, k2.public.encoded, wrap, k1.public.encoded, k2.public.encoded, "r")
+        val s2 = app.pocketagent.sync.ShareSession.key(k2, k1.public.encoded, wrap, k1.public.encoded, k2.public.encoded, "r")
+        check("both sides agree a fresh key, different every time", s1 != null && s1.contentEquals(s2) && !s1.contentEquals(app.pocketagent.sync.ShareSession.key(app.pocketagent.sync.ShareSession.keyPair(), k2.public.encoded, wrap, k1.public.encoded, k2.public.encoded, "r")))
+        check("a broken public key is refused", app.pocketagent.sync.ShareSession.key(k1, ByteArray(40) { 7 }, wrap, k1.public.encoded, k2.public.encoded, "r") == null)
+        a.settingsStore.update { it.copy(name = "Asha") }
+        delay(200)
+        val fetched = ShareClient.fetch(stranger, host.code)
+        check("the chat arrives with its title and the sharer's name", fetched != null && fetched.title == "Trip plan" && fetched.by == "Asha" && fetched.messages.size == 5)
+        check("and nothing is saved until the person agrees", titles(stranger).isEmpty() && !File(stranger.attach.dir, "pic.jpg").exists())
+        val got = fetched?.let { ShareClient.save(stranger, it) }
         check("the stranger receives the chat", got != null && texts(stranger, "Trip plan").size == 5)
         check("with its attachment", File(stranger.attach.dir, "pic.jpg").isFile)
         check("and nothing else: one chat, no key, no files", titles(stranger) == listOf("Trip plan") && stranger.keyFor(Providers.ANTHROPIC) == null && !File(stranger.memory.root, "me.md").exists())

@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pocketagent.LocalGraph
 import app.pocketagent.sync.ShareClient
+import androidx.compose.ui.draw.alpha
+import app.pocketagent.sync.ShareCode
 import app.pocketagent.sync.ShareHost
 import app.pocketagent.sync.SyncCode
 import app.pocketagent.sync.SyncEngine
@@ -180,25 +183,38 @@ fun SyncSection() {
 fun ShareChatDialog(chatId: Long, onDismiss: () -> Unit) {
     val g = LocalGraph.current
     val scope = rememberCoroutineScope()
-    val host = remember(chatId) { ShareHost(g, chatId).also { it.start() } }
+    // A code works for a few minutes; "New code" starts again with a fresh one.
+    var round by remember { mutableStateOf(0) }
+    val host = remember(chatId, round) { ShareHost(g, chatId).also { it.start() } }
     DisposableEffect(host) { onDispose { scope.launch { host.stop() } } }
+    // Copied at once, ready to paste into a message to the other person.
+    val shareText = remember(host) { ShareCode.text(host.code) }
+    LaunchedEffect(host) { g.platform.copyToClipboard(shareText) }
     val served by host.served.collectAsState()
+    val expired by host.expired.collectAsState()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Share this chat") },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-                QrCode(SyncCode.qr(host.code, SyncCode.SHARE), 190.dp)
-                CodeText(host.code, Modifier.padding(top = 12.dp))
+                SelectionContainer {
+                    Text(
+                        host.code, Modifier.padding(vertical = 10.dp).alpha(if (expired) 0.35f else 1f),
+                        style = MaterialTheme.typography.displayMedium.copy(fontFamily = FontFamily.Monospace, letterSpacing = 8.sp), textAlign = TextAlign.Center,
+                    )
+                }
                 Text(
-                    if (served == 0) "The other person opens Pocket Agent, chooses Open a shared chat, and scans or types this code. They get this chat only. Keep this open until they have it."
-                    else "Sent $served time${if (served == 1) "" else "s"}. You can close this now.",
-                    Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                    when {
+                        expired -> "This code has stopped working. Make a new one to share again."
+                        served == 0 -> "Copied. Send it to the other person: when they paste it into Pocket Agent's message box, this chat opens for them, and only this chat. Keep this open until they have it."
+                        else -> "Sent $served time${if (served == 1) "" else "s"}. You can close this now."
+                    },
+                    Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 )
             }
         },
         confirmButton = { TextButton(onDismiss) { Text("Done") } },
-        dismissButton = { TextButton({ g.platform.copyToClipboard(SyncCode.pretty(host.code)) }) { Text("Copy code") } },
+        dismissButton = { if (expired) TextButton({ round++ }) { Text("New code") } else TextButton({ g.platform.copyToClipboard(shareText) }) { Text("Copy again") } },
     )
 }
 
@@ -216,17 +232,17 @@ fun OpenSharedDialog(onDismiss: () -> Unit, onOpened: (Long) -> Unit) {
         title = { Text("Open a shared chat") },
         text = {
             Column {
-                Text("Enter the code from the person sharing, while they still have it on screen.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
+                Text("Enter the four-character code from the person sharing, while they still have it on screen.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
                 CodeEntry(code, { code = it; error = null }, error, !busy)
             }
         },
         confirmButton = {
             TextButton({
-                val parsed = SyncCode.parse(code)
-                if (parsed == null || parsed.second == SyncCode.SYNC) { error = "That is not a share code. Check it and try again."; return@TextButton }
+                val parsed = ShareCode.parse(code)
+                if (parsed == null) { error = "That is not a share code. Check it and try again."; return@TextButton }
                 busy = true
                 scope.launch {
-                    val id = runCatching { ShareClient.open(g, parsed.first) }.getOrNull()
+                    val id = runCatching { ShareClient.open(g, parsed) }.getOrNull()
                     busy = false
                     if (id == null) error = "Could not reach the device sharing this chat. Ask them to keep the share screen open and try again." else onOpened(id)
                 }

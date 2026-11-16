@@ -168,11 +168,17 @@ class AndroidPlatform(private val app: Application) : Platform {
     }
 
     private fun start(intent: Intent) { runCatching { app.startActivity(Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
-    override fun shareText(text: String) = start(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text))
+    override fun openFile(file: File) {
+        runCatching {
+            val uri = FileProvider.getUriForFile(app, app.packageName + ".files", file)
+            val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
+            start(Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        }
+    }
     override fun shareFile(file: File) {
         runCatching {
             val uri = FileProvider.getUriForFile(app, app.packageName + ".files", file)
-            start(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            start(Intent(Intent.ACTION_SEND).setType(android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "text/plain").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         }
     }
 

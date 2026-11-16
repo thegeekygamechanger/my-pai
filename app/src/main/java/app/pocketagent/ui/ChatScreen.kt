@@ -61,9 +61,12 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Menu
@@ -74,6 +77,10 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,7 +114,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
@@ -144,6 +162,10 @@ import app.pocketagent.LocalGraph
 import app.pocketagent.LocalWide
 import app.pocketagent.Speech
 import app.pocketagent.ai.Providers
+import app.pocketagent.sync.ShareClient
+import app.pocketagent.sync.ShareCode
+import app.pocketagent.sync.SharedChat
+import app.pocketagent.sync.SyncCode
 import app.pocketagent.ui.theme.LocalMotion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -157,7 +179,7 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: () -> Unit, onWorkspace: () -> Unit, onDeleted: () -> Unit) {
+fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: () -> Unit, onWorkspace: () -> Unit, onDeleted: () -> Unit, onOpenChat: (Long) -> Unit = {}) {
     val g = LocalGraph.current
     val platform = g.platform
     val wide = LocalWide.current
@@ -172,7 +194,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     val runs by g.allRuns.collectAsState()
     val run = runs[chatId]
     val snack = remember { SnackbarHostState() }
-    val showThinking = settings?.showThinking != false
+    val showThinking = settings?.showWork == true
     fun buzz(type: HapticFeedbackType = HapticFeedbackType.Confirm) { if (settings?.haptics != false) haptic.performHapticFeedback(type) }
 
     // A finished reply is saved, then the run ends; the saved copy reaches the screen a moment later.
@@ -243,6 +265,10 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     var deleting by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    // Connected accounts the person has pulled into this message with "@".
+    val mentions = remember(chatId) { mutableStateListOf<Mention>() }
+    var pickingRepos by remember { mutableStateOf(false) }
+    val connections = remember(settings?.sharedRev) { listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }) }
 
     val pickFiles = platform.rememberFilePicker { sources ->
         importing = true
@@ -260,10 +286,29 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         }
     }
     val askNotifications = platform.rememberNotificationAsk()
+
+    // A share code pasted into the message box is recognised at once: the chat behind it is fetched, and the
+    // person is asked before it is opened as a new chat of their own.
+    var incoming by remember { mutableStateOf<SharedChat?>(null) }
+    var fetching by remember { mutableStateOf(false) }
+    var pastedWhole by remember { mutableStateOf(false) }
+    LaunchedEffect(input) {
+        // Either the labelled form anywhere in the text, or the bare four characters pasted into an empty box.
+        val hit = ShareCode.find(input)
+        val code = hit?.groupValues?.get(1)?.uppercase() ?: ShareCode.parse(input).takeIf { pastedWhole } ?: return@LaunchedEffect
+        input = if (hit != null) input.replace(hit.value, "").trim() else ""
+        if (fetching) return@LaunchedEffect
+        fetching = true
+        // Clearing the box restarts this effect, so the fetch runs in the screen's own scope and is not cut short.
+        scope.launch {
+            val got = try { ShareClient.fetch(g, code) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null } finally { fetching = false }
+            if (got == null) snack.showSnackbar("Could not reach the device sharing that chat. Ask them to keep the share window open, then paste the code again.") else incoming = got
+        }
+    }
     fun send() {
         val c = chat ?: return
         val text = input.trim()
-        if (run != null || (text.isEmpty() && picked.isEmpty())) return
+        if (run != null || (text.isEmpty() && picked.isEmpty() && mentions.isEmpty())) return
         if (g.keyFor(c.provider) == null) { scope.launch { snack.showSnackbar("Add a key for ${g.provider(c.provider)?.name ?: "this service"} in Settings, or pick another model.") }; return }
         if (c.model.isBlank()) { showControls = true; return }
         val blocks = ArrayList<JsonObject>()
@@ -275,13 +320,21 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             }
         }
         picked.forEach { blocks += it.block }
-        if (text.isNotEmpty()) blocks += buildJsonObject { put("type", "text"); put("text", text) }
+        // "@GitHub owner/repo" and "@Gmail" go at the top of the message, as lines the model is told how to read.
+        val lead = mentions.joinToString("") { m -> "@" + m.name + (if (m.repos.isEmpty()) "" else " " + m.repos.joinToString(", ")) + "\n" }
+        if (text.isNotEmpty() || lead.isNotEmpty()) blocks += buildJsonObject { put("type", "text"); put("text", (if (lead.isEmpty()) "" else lead + "\n") + text.ifEmpty { "Use this for what comes next." }) }
         if (blocks.none { it.str("type") == "text" }) blocks += buildJsonObject { put("type", "text"); put("text", "Please look at the attached file${if (blocks.size == 1) "" else "s"}.") }
         buzz()
         askNotifications()
-        if (edit != null) g.runs.editAndResend(c.id, edit.msgId, JsonArray(blocks)) else g.runs.send(c.id, JsonArray(blocks))
+        val usesConnection = mentions.isNotEmpty()
+        scope.launch {
+            // The connected accounts are tools, and tools belong to Work mode: a message that names one switches the chat over.
+            if (usesConnection && !c.agent) g.dao.update(c.copy(agent = true))
+            if (edit != null) g.runs.editAndResend(c.id, edit.msgId, JsonArray(blocks)) else g.runs.send(c.id, JsonArray(blocks))
+        }
         input = ""
         picked.clear()
+        mentions.clear()
         editing = null
     }
 
@@ -289,9 +342,11 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         // An empty chat sits on slowly moving colour that follows the hour and the weather; it fades away once the conversation starts.
         val weatherNow by g.weather.collectAsState()
         val hourNow = remember(chatId) { java.time.LocalTime.now().hour }
-        androidx.compose.animation.AnimatedVisibility(rows.isEmpty() && chat != null, enter = fadeIn(tween(700)), exit = fadeOut(tween(700))) {
-            Backdrop(backdropColors(hourNow, weatherNow), Modifier.fillMaxSize())
-        }
+        // Full colour and a slow drift on an empty chat. Once the conversation starts the colour drops back so text stays
+        // easy to read; it stands still while nothing is happening and flows while a reply is being written.
+        val started = rows.isNotEmpty()
+        val glow by animateFloatAsState(if (!started) 1f else if (run != null) 0.62f else 0.4f, tween(900), label = "glow")
+        if (chat != null) Backdrop(backdropColors(hourNow, weatherNow), Modifier.fillMaxSize(), speed = if (!started) 2.7f else if (run != null) 9f else 0f, strength = glow)
         Column(Modifier.fillMaxSize().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -314,16 +369,13 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         DropdownMenuItem({ Text("Model and tools") }, { menu = false; showControls = true }, leadingIcon = { Icon(Icons.Rounded.Tune, null) })
                         DropdownMenuItem({ Text("Rename") }, { menu = false; renaming = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
                         DropdownMenuItem({ Text("Share with a code") }, { menu = false; sharing = true }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) })
-                        DropdownMenuItem({ Text(if (platform.isDesktop) "Copy as text" else "Share as text") }, {
-                            menu = false
-                            val text = exportMarkdown(chat, messages, g.blobs::unpack)
-                            if (platform.isDesktop) platform.copyToClipboard(text) else platform.shareText(text)
-                        }, leadingIcon = { Icon(Icons.Rounded.Share, null) })
                         DropdownMenuItem({ Text("Delete chat") }, { menu = false; deleting = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
                     }
                 }
                 // New chat sits alone in the top corner.
-                FilledTonalIconButton(onNew, Modifier.padding(start = 2.dp, end = 6.dp)) { Icon(Icons.Rounded.Add, "New chat") }
+                Surface(onClick = onNew, shape = CircleShape, color = cs.surface.copy(alpha = 0.35f), border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.12f)), modifier = Modifier.padding(start = 2.dp, end = 8.dp).size(44.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "New chat") }
+                }
             }
 
             // Messages. On a wide window the column is kept to a comfortable reading width.
@@ -350,9 +402,10 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                                 is UiRow.Md -> MdRow(row, m)
                                 is UiRow.Thinking -> ThinkingRow(row, m)
                                 is UiRow.Tool -> ToolRow(row, m)
+                                is UiRow.Steps -> StepsRow(row, m)
                                 is UiRow.Note -> NoteRow(row, m)
                                 is UiRow.Sources -> SourcesRow(row, m)
-                                is UiRow.Footer -> FooterRow(row, m, onCopy = { clipboard.setText(AnnotatedString(it)); buzz() }, onShare = { if (platform.isDesktop) platform.copyToClipboard(it) else platform.shareText(it) }, onRetry = { buzz(); g.runs.regenerate(chatId) }, busy = run != null)
+                                is UiRow.Footer -> FooterRow(row, m, onCopy = { clipboard.setText(AnnotatedString(it)); buzz() }, onRetry = { buzz(); g.runs.regenerate(chatId) }, busy = run != null)
                                 is UiRow.Status -> StatusRow(row, m)
                             }
                         }
@@ -407,10 +460,27 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         }
                     }
                     Composer(
-                        chat = chat, run = run, input = input, onInput = { input = it }, picked = picked, importing = importing, editing = editing != null,
+                        chat = chat, run = run, input = input, onInput = { pastedWhole = input.isBlank() && it.trim().length == ShareCode.LENGTH; input = it }, picked = picked, importing = importing, editing = editing != null,
+                        // Connected accounts belong to Work, so a chat that has already started as a chat does not offer them.
+                        mentions = mentions, connections = if (messages.isNotEmpty() && chat?.agent != true) emptyList() else connections,
+                        onMention = { name -> if (name == "GitHub") pickingRepos = true else if (mentions.none { it.name == name }) mentions += Mention(name) },
                         onCancelEdit = { editing = null; input = "" },
                         onAttach = pickFiles,
-                        onMode = { agent -> chat?.let { c -> buzz(HapticFeedbackType.ToggleOn); scope.launch { g.dao.update(c.copy(agent = agent)) } } },
+                        // Chat or Work is chosen before the first message. After that the switch stays put, and a tap on the other side offers a fresh start instead.
+                        locked = messages.isNotEmpty(),
+                        onMode = { agent ->
+                            chat?.let { c ->
+                                if (messages.isEmpty()) { buzz(HapticFeedbackType.ToggleOn); scope.launch { g.dao.update(c.copy(agent = agent)) } }
+                                else if (agent != c.agent) scope.launch {
+                                    snack.currentSnackbarData?.dismiss()
+                                    val picked = snack.showSnackbar(
+                                        if (agent) "This is a chat. Start a new one to use Work." else "This is a piece of work. Start a new one to chat.",
+                                        actionLabel = "Start new", duration = androidx.compose.material3.SnackbarDuration.Short,
+                                    )
+                                    if (picked == androidx.compose.material3.SnackbarResult.ActionPerformed) onNew()
+                                }
+                            }
+                        },
                         speech = platform.rememberSpeech(g, onText = { said -> input = if (input.isBlank()) said else input.trimEnd() + " " + said }, onError = { msg -> scope.launch { snack.showSnackbar(msg) } }),
                         onSend = ::send,
                         onStop = { buzz(HapticFeedbackType.Reject); g.stopRun(chatId) },
@@ -422,6 +492,21 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
 
     if (showControls) chat?.let { c -> ControlsSheet(c, onDismiss = { showControls = false }) }
     if (sharing) ShareChatDialog(chatId) { sharing = false }
+    if (fetching) AlertDialog(onDismissRequest = {}, confirmButton = {}, title = { Text("Opening the shared chat") }, text = { androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth()) })
+    incoming?.let { shared ->
+        AlertDialog(
+            onDismissRequest = { incoming = null },
+            title = { Text(if (shared.by.isEmpty()) "Open this shared chat?" else "Open the chat ${shared.by} shared?") },
+            text = { Text("\"${shared.title}\", ${shared.messages.size} message${if (shared.messages.size == 1) "" else "s"}. It opens as a new chat of your own; nothing else of theirs comes with it.") },
+            confirmButton = { TextButton({ incoming = null; scope.launch { onOpenChat(ShareClient.save(g, shared)) } }) { Text("Open") } },
+            dismissButton = { TextButton({ incoming = null }) { Text("Not now") } },
+        )
+    }
+    if (pickingRepos) RepoPicker(mentions.firstOrNull { it.name == "GitHub" }?.repos.orEmpty(), onDismiss = { pickingRepos = false }) { repos ->
+        pickingRepos = false
+        mentions.removeAll { it.name == "GitHub" }
+        mentions += Mention("GitHub", repos)
+    }
 
     if (renaming) {
         var name by remember { mutableStateOf(chat?.title.orEmpty()) }
@@ -476,11 +561,19 @@ private fun EmptyChat(chatId: Long, work: Boolean, onPick: (String) -> Unit) {
 @Composable
 private fun Composer(
     chat: Chat?, run: RunState?, input: String, onInput: (String) -> Unit, picked: MutableList<Picked>, importing: Boolean, editing: Boolean,
-    onCancelEdit: () -> Unit, onAttach: () -> Unit, onMode: (Boolean) -> Unit, speech: Speech?, onSend: () -> Unit, onStop: () -> Unit,
+    mentions: MutableList<Mention>, connections: List<String>, onMention: (String) -> Unit,
+    onCancelEdit: () -> Unit, onAttach: () -> Unit, locked: Boolean, onMode: (Boolean) -> Unit, speech: Speech?, onSend: () -> Unit, onStop: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val running = run != null
-    val canSend = !running && (input.isNotBlank() || picked.isNotEmpty())
+    val desktop = LocalGraph.current.platform.isDesktop
+    // Choosing to edit a sent message puts the cursor in the box, ready to change it and send again.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(editing) { if (editing) runCatching { focus.requestFocus() } }
+    val canSend = !running && (input.isNotBlank() || picked.isNotEmpty() || mentions.isNotEmpty())
+    // Typing "@" (or "@gi…") at the end of the message offers the connected accounts that match.
+    val at = remember(input) { AT.find(input) }
+    val offers = if (at == null) emptyList() else connections.filter { it.startsWith(at.groupValues[2], ignoreCase = true) && (it == "GitHub" || mentions.none { m -> m.name == it }) }
     // While a reply is being generated a soft band of colour travels round the composer's edge.
     val glow = if (running && LocalMotion.current) {
         val t = rememberInfiniteTransition(label = "glow")
@@ -502,27 +595,40 @@ private fun Composer(
         },
     ) {
         Column {
-            AnimatedVisibility(running, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                Column {
-                    val label = when (run?.phase) {
-                        Phase.CONNECTING -> "Connecting"
-                        Phase.THINKING -> "Thinking"
-                        Phase.WRITING -> "Writing"
-                        Phase.TOOL -> "Using a tool"
-                        Phase.APPROVAL -> "Waiting for your OK"
-                        Phase.RETRYING -> "Reconnecting"
-                        null -> ""
-                    }
-                    Text(
-                        listOfNotNull(label, "on ${run?.remote}".takeIf { run?.remote?.isNotEmpty() == true }, "step ${run?.step ?: 1}".takeIf { chat?.agent == true }).joinToString(" · "),
-                        Modifier.padding(start = 22.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium.copy(brush = Brush.linearGradient(listOf(c1, c2))),
-                    )
-                }
+            // What goes on behind a reply stays out of sight; only what the person can act on, or where it is running, is named.
+            val note = listOfNotNull(
+                when (run?.phase) { Phase.APPROVAL -> "Waiting for your OK"; Phase.RETRYING -> "Reconnecting"; else -> null },
+                "Running on ${run?.remote}".takeIf { run?.remote?.isNotEmpty() == true },
+            ).joinToString(" · ")
+            AnimatedVisibility(running && note.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Text(note, Modifier.padding(start = 22.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium.copy(brush = Brush.linearGradient(listOf(c1, c2))))
             }
             AnimatedVisibility(editing) {
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Editing your message. Replies after it will be replaced.", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.tertiary)
                     IconButton(onCancelEdit, Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, "Cancel edit", Modifier.size(16.dp)) }
+                }
+            }
+            AnimatedVisibility(offers.isNotEmpty() && !running, enter = expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    offers.forEach { name ->
+                        AssistChip(
+                            onClick = { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); onMention(name) },
+                            label = { Text(name) }, leadingIcon = { Icon(if (name == "GitHub") Icons.Rounded.Code else Icons.Rounded.Email, null, Modifier.size(18.dp)) },
+                        )
+                    }
+                }
+            }
+            AnimatedVisibility(mentions.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    mentions.toList().forEach { m ->
+                        InputChip(
+                            selected = true, onClick = { if (m.name == "GitHub") onMention("GitHub") },
+                            label = { Text(m.name + when (m.repos.size) { 0 -> ""; 1 -> " · " + m.repos[0].substringAfter('/'); else -> " · ${m.repos.size} repositories" }, maxLines = 1) },
+                            leadingIcon = { Icon(if (m.name == "GitHub") Icons.Rounded.Code else Icons.Rounded.Email, null, Modifier.size(18.dp)) },
+                            trailingIcon = { Icon(Icons.Rounded.Close, "Remove ${m.name}", Modifier.size(16.dp).clip(CircleShape).clickable { mentions.remove(m) }) },
+                        )
+                    }
                 }
             }
             AnimatedVisibility(picked.isNotEmpty() || importing) {
@@ -548,7 +654,12 @@ private fun Composer(
             }
             BasicTextField(
                 value = input, onValueChange = onInput,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 168.dp).padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp, max = 168.dp).padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 4.dp).focusRequester(focus)
+                    // On a computer Enter sends and Shift+Enter starts a new line, as people expect from a keyboard.
+                    .onPreviewKeyEvent { e ->
+                        if (!desktop || (e.key != Key.Enter && e.key != Key.NumPadEnter) || e.isShiftPressed || e.isCtrlPressed || e.isAltPressed) false
+                        else { if (e.type == KeyEventType.KeyDown && !running) onSend(); true }
+                    },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
                 cursorBrush = SolidColor(cs.primary),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -564,7 +675,7 @@ private fun Composer(
             Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onAttach, enabled = !running && picked.size < 6) { Icon(Icons.Rounded.Add, "Attach a file") }
                 Segmented(
-                    listOf(false to "Chat", true to "Work"), chat?.agent == true, { if (!running) onMode(it) },
+                    listOf(false to "Chat", true to "Work"), chat?.agent == true, { if (!running) onMode(it) }, Modifier.alpha(if (locked) 0.6f else 1f),
                     // On a narrow phone the words alone keep the row to one line.
                     icons = if (roomy) mapOf(false to Icons.Rounded.ChatBubbleOutline, true to Icons.Rounded.AutoAwesome) else emptyMap(), fill = false,
                 )
@@ -614,3 +725,57 @@ fun exportMarkdown(chat: Chat?, messages: List<app.pocketagent.data.Msg>, unpack
     return sb.toString().trim()
 }
 
+
+/** A connected account named in a message with "@", and for GitHub the repositories it is about. */
+data class Mention(val name: String, val repos: List<String> = emptyList())
+
+private val AT = Regex("(^|\\s)@(\\w*)$")
+
+/** Chooses which GitHub repositories a message is about: one, several, or none for the whole account. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RepoPicker(initial: List<String>, onDismiss: () -> Unit, onDone: (List<String>) -> Unit) {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    var repos by remember { mutableStateOf<List<String>?>(null) }
+    var error by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    val chosen = remember { mutableStateListOf<String>().apply { addAll(initial) } }
+    LaunchedEffect(Unit) {
+        try {
+            val text = withContext(Dispatchers.IO) { g.integrations.run("github", buildJsonObject { put("method", "GET"); put("path", "/user/repos?per_page=100&sort=pushed") }) }
+            repos = parseArray(text).mapNotNull { (it as? JsonObject)?.str("full_name") }
+        } catch (e: Exception) {
+            error = e.message ?: "Could not load your repositories."
+            repos = emptyList()
+        }
+    }
+    val shown = repos.orEmpty().filter { query.isBlank() || it.contains(query.trim(), ignoreCase = true) }
+    ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
+            SectionLabel("GitHub repositories")
+            OutlinedTextField(query, { query = it.take(60) }, Modifier.fillMaxWidth().padding(bottom = 8.dp), singleLine = true, shape = CircleShape, placeholder = { Text("Search your repositories") })
+            when {
+                repos == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.LoadingIndicator(Modifier.size(40.dp)) }
+                error.isNotEmpty() -> Text(error, Modifier.padding(8.dp), color = cs.error, style = MaterialTheme.typography.bodyMedium)
+                else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(shown, key = { it }) { name ->
+                        val on = name in chosen
+                        val bg by animateColorAsState(if (on) cs.primaryContainer else cs.surfaceContainerHigh, label = "repo")
+                        Surface(onClick = { if (on) chosen.remove(name) else chosen.add(name) }, shape = MaterialTheme.shapes.large, color = bg, modifier = Modifier.fillMaxWidth()) {
+                            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (on) Icon(Icons.Rounded.CheckCircle, "Selected", Modifier.size(20.dp), tint = cs.primary)
+                            }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (chosen.isEmpty()) "None picked: the whole account" else "${chosen.size} picked", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                TextButton(onDismiss) { Text("Cancel") }
+                androidx.compose.material3.FilledTonalButton({ onDone(chosen.toList()) }) { Text("Done") }
+            }
+        }
+    }
+}

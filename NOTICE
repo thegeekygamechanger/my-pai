@@ -9,4 +9,5 @@ Bundled third-party material:
 - Compose Multiplatform (JetBrains) - Apache License 2.0; Skia - BSD 3-Clause
 - OkHttp and Okio (Square) - Apache License 2.0
 - ZXing core - Apache License 2.0
+- Vosk and its language packs (Alpha Cephei), JNA - Apache License 2.0 (computers only)
 - SQLite - public domain

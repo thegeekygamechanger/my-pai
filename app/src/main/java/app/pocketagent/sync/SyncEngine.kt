@@ -650,6 +650,6 @@ class SyncEngine(private val g: Graph) {
         const val MAX_FILE = 8L * 1024 * 1024
         const val MAX_FILES = 2000
         private const val CODE = "sync_code"
-        private val ATT = Regex("\"path\":\"(att/[^\"]+)\"")
+        private val ATT = Regex("(att/[A-Za-z0-9._-]+)")
     }
 }

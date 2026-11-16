@@ -171,7 +171,7 @@ fun ControlsSheet(chat: Chat, onDismiss: () -> Unit) {
             SwitchRow("Code sandbox", if (server) "Work mode: run Python for calculations and data." else "Available with Claude models.", chat.code && server, enabled = server && chat.agent && ModelCaps.adaptive(chat.model)) { save(chat.copy(code = it)) }
             SwitchRow("Memory", "Work mode: keep notes that carry over between chats.", chat.memory, enabled = chat.agent) { save(chat.copy(memory = it)) }
             if (server && ModelCaps.fast(chat.model)) SwitchRow("Fast mode", "Much faster output at about twice the price.", chat.fast) { save(chat.copy(fast = it)) }
-            SwitchRow("Show reasoning", "Show a summary of the model's thinking above replies.", settings?.showThinking != false) { v -> scope.launch { g.settingsStore.update { it.copy(showThinking = v) } } }
+            SwitchRow("Show the working", "Show the reasoning, searches and other steps behind each reply.", settings?.showWork == true) { v -> scope.launch { g.settingsStore.update { it.copy(showWork = v) } } }
 
             if (chat.agent) {
                 SectionLabel("Work permissions", Modifier.padding(top = 18.dp))

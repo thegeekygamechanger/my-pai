@@ -63,7 +63,8 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun tasksChanged(chatId: Long, tasksJson: String) = runBlocking { dao.setTasks(chatId, tasksJson) }
     }
     val integrations = Integrations({ name -> vault.read(name) })
-    val tools = Tools(workspace, memory, toolHost, integrations)
+    val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir)
+    val tools = Tools(workspace, memory, toolHost, integrations, media)
 
     private val runHost = object : RunHost {
         override suspend fun settings(): Settings = settingsStore.flow.first()

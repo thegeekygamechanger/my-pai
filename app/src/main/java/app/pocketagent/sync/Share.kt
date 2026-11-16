@@ -3,23 +3,29 @@ package app.pocketagent.sync
 import app.pocketagent.Graph
 import app.pocketagent.ai.RequestBuilder
 import app.pocketagent.ai.parseArray
+import app.pocketagent.ai.parseObject
 import app.pocketagent.ai.asObj
 import app.pocketagent.ai.long
 import app.pocketagent.ai.obj
 import app.pocketagent.ai.str
 import app.pocketagent.data.Chat
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
+import java.security.KeyPair
 import java.util.Base64
 import java.util.UUID
 
@@ -29,31 +35,54 @@ import java.util.UUID
  * keeps the share open, because the relay holds nothing to pick up later.
  */
 class ShareHost(private val g: Graph, private val chatId: Long) {
-    val code: String = SyncCode.new()
+    val code: String = ShareCode.new()
     private val _served = MutableStateFlow(0)
     /** How many times the chat has been handed over. */
     val served: StateFlow<Int> = _served
+    private val _expired = MutableStateFlow(false)
+    /** True once the code has stopped working: a short code is only safe for a short time. */
+    val expired: StateFlow<Boolean> = _expired
     private var job: Job? = null
 
     fun start() {
-        val room = SyncCode.room(code, SyncCode.SHARE)
         val id = "host-" + UUID.randomUUID()
-        val link = RelayLink({ relayUrl(g) }, room, id, Sealer(SyncCode.key(code, SyncCode.SHARE), room))
         job = g.scope.launch {
-            runCatching {
-                link.run(onOnline = {}, onOpen = {}, onPeers = {}, onMessage = { m ->
-                    if (m.str("t") == "sreq") { send(link, id, m.str("rid").orEmpty()); _served.value++ }
-                })
+            val keys = withContext(Dispatchers.Default) { ShareCode.derive(code) }
+            val link = RelayLink({ relayUrl(g) }, keys.room, id, Sealer(keys.key, keys.room))
+            val serving = launch {
+                runCatching {
+                    link.run(onOnline = {}, onOpen = {}, onPeers = {}, onMessage = { m ->
+                        if (m.str("t") == "sreq" && answer(link, id, keys.key, m)) _served.value++
+                    })
+                }
             }
+            delay(LIFETIME_MS)
+            serving.cancelAndJoin()
+            _expired.value = true
         }
     }
 
-    private suspend fun send(link: RelayLink, id: String, rid: String) {
+    /** Agrees a fresh key with the device that asked, then sends the chat under that key. */
+    private suspend fun answer(link: RelayLink, id: String, wrap: ByteArray, req: JsonObject): Boolean {
+        val rid = req.str("rid").orEmpty()
+        val guestPublic = runCatching { Base64.getDecoder().decode(req.str("pub").orEmpty()) }.getOrNull() ?: return false
+        if (rid.isEmpty() || rid.length > 64 || guestPublic.size !in 1..256) return false
+        val pair = ShareSession.keyPair()
+        val hostPublic = pair.public.encoded
+        val key = ShareSession.key(pair, guestPublic, wrap, guestPublic, hostPublic, rid) ?: return false
+        val box = Sealer(key, "share/$rid")
         val dao = g.db.dao()
-        val chat = dao.chat(chatId) ?: return
+        val chat = dao.chat(chatId) ?: return false
         val msgs = dao.messages(chatId)
-        link.send(buildJsonObject {
-            put("from", id); put("rid", rid); put("t", "schat"); put("count", msgs.size)
+        link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "skey"); put("pub", Base64.getEncoder().encodeToString(hostPublic)) })
+        // Every part is numbered inside its sealed box, so none can be dropped, repeated or reordered on the way without the receiver noticing.
+        var n = 0
+        fun boxed(part: JsonObject) {
+            val plain = JsonObject(part + ("n" to JsonPrimitive(n++))).toString().toByteArray()
+            link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "sbox"); put("data", Base64.getEncoder().encodeToString(box.seal(plain))) })
+        }
+        boxed(buildJsonObject {
+            put("t", "schat"); put("count", msgs.size); put("by", g.settings.value?.name.orEmpty())
             put("title", chat.title); put("agent", chat.agent); put("model", chat.model); put("effort", chat.effort); put("preview", chat.preview)
         })
         val sent = HashSet<String>()
@@ -61,57 +90,97 @@ class ShareHost(private val g: Graph, private val chatId: Long) {
             ATT.findAll(g.blobs.unpack(m.content)).forEach { hit ->
                 val name = File(hit.groupValues[1]).name
                 val f = g.attach.file(name)
-                if (sent.add(name) && f.isFile) link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "sfile"); put("name", name); put("data", Base64.getEncoder().encodeToString(f.readBytes())) })
+                if (sent.add(name) && f.isFile) boxed(buildJsonObject { put("t", "sfile"); put("name", name); put("data", Base64.getEncoder().encodeToString(f.readBytes())) })
             }
-            link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "smsg"); put("m", g.sync.msgJson(m)) })
+            boxed(buildJsonObject { put("t", "smsg"); put("m", g.sync.msgJson(m)) })
         }
-        link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "sdone") })
+        boxed(buildJsonObject { put("t", "sdone") })
+        return true
     }
 
     suspend fun stop() { job?.cancelAndJoin() }
 
-    private companion object { val ATT = Regex("\"path\":\"(att/[^\"]+)\"") }
+    companion object {
+        /** How long a share code works. */
+        const val LIFETIME_MS = 10 * 60_000L
+        private val ATT = Regex("(att/[A-Za-z0-9._-]+)")
+    }
 }
 
 object ShareClient {
+    /** Fetches and saves in one go. */
+    suspend fun open(g: Graph, code: String): Long? = fetch(g, code)?.let { save(g, it) }
+
     /**
-     * Fetches the chat behind a share code and saves it as a new chat on this device.
-     * @return the new chat's id, or null if the sharer could not be reached in time
+     * Fetches the chat behind a share code without saving it yet, so the person can be asked first.
+     * @return the chat, or null if the sharer could not be reached in time
      */
-    suspend fun open(g: Graph, code: String): Long? {
-        val room = SyncCode.room(code, SyncCode.SHARE)
+    suspend fun fetch(g: Graph, code: String): SharedChat? {
+        val keys = withContext(Dispatchers.Default) { ShareCode.derive(code) }
         val id = "guest-" + UUID.randomUUID()
-        val link = RelayLink({ relayUrl(g) }, room, id, Sealer(SyncCode.key(code, SyncCode.SHARE), room))
+        val link = RelayLink({ relayUrl(g) }, keys.room, id, Sealer(keys.key, keys.room))
         var head: JsonObject? = null
         val msgs = ArrayList<JsonObject>()
+        // Attachments wait in memory and are written only if the person agrees to open the chat.
+        val files = HashMap<String, ByteArray>()
         val done = CompletableDeferred<Unit>()
-        // Each request carries its own id and only answers to the newest one count, so asking twice cannot mix two copies.
+        // Each request carries its own id and its own key pair, and only answers to the newest one count, so asking twice cannot mix two copies.
         var rid = ""
+        var pair: KeyPair? = null
+        var box: Sealer? = null
+        var next = 0L
         fun ask() {
             rid = UUID.randomUUID().toString()
-            head = null; msgs.clear()
-            link.send(buildJsonObject { put("from", id); put("t", "sreq"); put("rid", rid) })
+            val mine = ShareSession.keyPair()
+            pair = mine; box = null; next = 0
+            head = null; msgs.clear(); files.clear()
+            link.send(buildJsonObject { put("from", id); put("t", "sreq"); put("rid", rid); put("pub", Base64.getEncoder().encodeToString(mine.public.encoded)) })
         }
         val job = g.scope.launch {
             runCatching {
                 link.run(onOnline = {}, onOpen = {}, onPeers = { if (it.isNotEmpty() && head == null) ask() }, onMessage = { m ->
                     if (m.str("rid") == rid) when (m.str("t")) {
-                        "schat" -> { head = m; msgs.clear() }
-                        "sfile" -> {
-                            val name = File(m.str("name").orEmpty()).name
-                            val bytes = runCatching { Base64.getDecoder().decode(m.str("data").orEmpty()) }.getOrNull()
-                            if (name.isNotEmpty() && bytes != null) { g.attach.dir.mkdirs(); g.attach.file(name).writeBytes(bytes) }
+                        "skey" -> {
+                            val mine = pair
+                            val hostPublic = runCatching { Base64.getDecoder().decode(m.str("pub").orEmpty()) }.getOrNull()
+                            if (box == null && mine != null && hostPublic != null) {
+                                ShareSession.key(mine, hostPublic, keys.key, mine.public.encoded, hostPublic, rid)?.let { box = Sealer(it, "share/$rid") }
+                            }
                         }
-                        "smsg" -> m.obj("m")?.let { msgs += it }
-                        "sdone" -> if (head != null) done.complete(Unit)
+                        "sbox" -> {
+                            val plain = runCatching { Base64.getDecoder().decode(m.str("data").orEmpty()) }.getOrNull()?.let { sealed -> box?.open(sealed) }
+                            val part = plain?.let { runCatching { parseObject(String(it)) }.getOrNull() }
+                            if (part != null && part.long("n") == next) {
+                                next++
+                                when (part.str("t")) {
+                                    "schat" -> { head = part; msgs.clear() }
+                                    "sfile" -> {
+                                        val name = File(part.str("name").orEmpty()).name
+                                        val bytes = runCatching { Base64.getDecoder().decode(part.str("data").orEmpty()) }.getOrNull()
+                                        if (name.isNotEmpty() && bytes != null) files[name] = bytes
+                                    }
+                                    "smsg" -> part.obj("m")?.let { msgs += it }
+                                    "sdone" -> if (head != null) done.complete(Unit)
+                                }
+                            }
+                        }
                     }
                 })
             }
         }
-        val got = withTimeoutOrNull(25_000) { done.await() }
-        job.cancelAndJoin()
+        // The link is closed whatever happens, including when the person gives up waiting.
+        val got = try { withTimeoutOrNull(25_000) { done.await() } } finally { job.cancel() }
+        job.join()
         val h = head
         if (got == null || h == null) return null
+        return SharedChat(h, msgs.toList(), files.toMap())
+    }
+
+    /** Saves a fetched chat as a new chat on this device and returns its id. */
+    suspend fun save(g: Graph, shared: SharedChat): Long {
+        val h = shared.head
+        val msgs = shared.messages
+        if (shared.files.isNotEmpty()) withContext(Dispatchers.IO) { g.attach.dir.mkdirs(); for ((name, bytes) in shared.files) g.attach.file(name).writeBytes(bytes) }
         // Saved through the tracked database with new ids: it is this person's own copy, and it reaches their linked devices like any chat.
         val now = System.currentTimeMillis()
         val settings = g.settings.value
@@ -131,6 +200,13 @@ object ShareClient {
         }
         return chatId
     }
+}
+
+/** A chat received through a share code, held in memory until the person agrees to open it. */
+class SharedChat(val head: JsonObject, val messages: List<JsonObject>, val files: Map<String, ByteArray> = emptyMap()) {
+    val title: String get() = head.str("title").orEmpty().ifBlank { "Shared chat" }
+    /** The sharer's name as they entered it in their app, or empty. */
+    val by: String get() = head.str("by").orEmpty().trim()
 }
 
 internal fun relayUrl(g: Graph): String =

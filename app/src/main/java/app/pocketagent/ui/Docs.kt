@@ -78,6 +78,8 @@ Your chats, attachments, workspace files, memory notes and settings are stored o
 ## What leaves your device
 - **Your messages and attachments** go straight from the app to the AI service you chose, over HTTPS, so it can reply. That service handles them under its own privacy policy.
 - **Web search and code sandbox**, when you switch them on, run on the AI service's side.
+- **Pictures and videos**, only when you ask for one: the description of what to create goes to Google (Gemini) or OpenAI with your own key for that service, and the result is saved on your device.
+- **Voice typing.** On a phone, your speech is turned into text by the phone's own speech service. On a computer it goes to Groq or OpenAI if you added a key for one of them; with no such key it is recognised on the computer itself and never leaves it, after a language pack is fetched once from alphacephei.com.
 - **Weather**, only if you enter a city: the app asks Open-Meteo for the current weather there, to shape the greeting and the colours of the first screen. Open-Meteo sees the city and your IP address.
 - **Update checks** ask GitHub whether a newer release exists. GitHub sees your IP address, as any website does.
 
@@ -91,7 +93,7 @@ A scheduled task starts a chat by itself at the time you set, on the device wher
 Sync is off until you turn it on. When it is on, your devices send each other your chats, files, settings and keys through a relay server. Everything is encrypted on the device with a key made from your pairing code, which never goes to the relay, so the relay cannot read any of it. The relay keeps nothing: no database, no files, no message log. It only passes each message to your other devices that are connected at that moment. Anyone who has your pairing code can read your synced data, so show it only to your own devices.
 
 ## Sharing a chat
-When you share a chat with a code, that one chat is sent, encrypted, to whoever opens the code while your share screen is open. They receive a copy of that chat only.
+When you share a chat with a code, that one chat is sent, encrypted with a key made for that hand-over, to whoever enters the code while your share screen is open. A code works for ten minutes. Anyone who has the code in that time can open the chat, so send it only to the person you mean. They receive a copy of that chat and the name you entered in the app, so they can see who it is from; nothing else.
 
 ## Deleting your data
 Delete a chat from History, or everything from Settings, Data. Removing the app removes all of it from the device. To remove a key from an AI service itself, revoke it in that service's dashboard.
@@ -121,6 +123,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - **TeX Gyre Heros** typeface (GUST e-foundry), GUST Font License. It is the freely licensed face used for headings; Helvetica itself cannot be included in an app.
 - **OkHttp** and **Okio** (Square), Apache License 2.0
 - **ZXing** core, for QR codes, Apache License 2.0
+- **Vosk** (Alpha Cephei) and its language packs, for voice typing on computers, Apache License 2.0; **JNA**, Apache License 2.0
 - **SQLite** (public domain)
 - Weather data by **Open-Meteo.com**, CC BY 4.0
 - On computers, a bundled **OpenJDK** runtime, GPL v2 with the Classpath Exception

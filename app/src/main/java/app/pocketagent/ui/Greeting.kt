@@ -1,12 +1,13 @@
 package app.pocketagent.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -77,22 +78,42 @@ fun backdropColors(hour: Int, weather: WeatherNow?): List<Color> {
     }
 }
 
-/** Soft patches of colour that drift slowly behind the first screen. Light on the processor: three gradients, redrawn as they move. */
+/**
+ * Soft patches of colour behind the chat. [speed] is how many times a minute they complete their slow circuit
+ * (0 holds them still where they are); [strength] scales how much colour shows through. Light on the
+ * processor: three gradients, redrawn only while they move.
+ */
 @Composable
-fun Backdrop(colors: List<Color>, modifier: Modifier = Modifier) {
-    val strength = if (LocalDark.current) 0.30f else 0.42f
-    val t = if (LocalMotion.current) {
-        val transition = rememberInfiniteTransition(label = "backdrop")
-        val v by transition.animateFloat(0f, 1f, infiniteRepeatable(tween(22_000, easing = LinearEasing)), label = "backdrop")
-        v
-    } else 0.2f
+fun Backdrop(colors: List<Color>, modifier: Modifier = Modifier, speed: Float = 2.7f, strength: Float = 1f) {
+    val base = (if (LocalDark.current) 0.30f else 0.42f) * strength
+    val motion = LocalMotion.current
+    var t by remember { mutableFloatStateOf(0.2f) }
+    LaunchedEffect(speed, motion) {
+        if (speed <= 0f || !motion) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            t = (t + (now - last) / 1e9f * speed / 60f) % 1f
+            last = now
+        }
+    }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         colors.take(3).forEachIndexed { i, c ->
             val a = 2 * PI * (t + i / 3.0)
-            val center = Offset((w * (0.5 + 0.36 * cos(a))).toFloat(), (h * (0.34 + 0.24 * sin(a * 1.0 + i))).toFloat())
-            drawRect(Brush.radialGradient(listOf(c.copy(alpha = strength), c.copy(alpha = 0f)), center, maxOf(w, h) * 0.62f))
+            val center = Offset((w * (0.5 + 0.36 * cos(a))).toFloat(), (h * (0.34 + 0.24 * sin(a + i))).toFloat())
+            drawRect(Brush.radialGradient(listOf(c.copy(alpha = base), c.copy(alpha = 0f)), center, maxOf(w, h) * 0.62f))
         }
     }
+}
+
+/** The same colours behind the side menu and other screens: still while nothing is happening, flowing while work is running. */
+@Composable
+fun AppBackdrop(modifier: Modifier = Modifier, strength: Float = 0.55f) {
+    val g = app.pocketagent.LocalGraph.current
+    val weather by g.weather.collectAsState()
+    val runs by g.allRuns.collectAsState()
+    val hour = remember { java.time.LocalTime.now().hour }
+    Backdrop(backdropColors(hour, weather), modifier, speed = if (runs.isNotEmpty()) 9f else 0f, strength = strength)
 }

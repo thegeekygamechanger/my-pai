@@ -73,7 +73,9 @@ class DesktopPlatform(override val filesDir: File) : Platform {
 
     override fun copyToClipboard(text: String) { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) } }
     // A computer has no share sheet; the text goes on the clipboard, ready to paste anywhere.
-    override fun shareText(text: String) = copyToClipboard(text)
+    override fun openFile(file: File) {
+        runCatching { Desktop.getDesktop().open(file) }.onFailure { runCatching { ProcessBuilder("xdg-open", file.path).start() } }
+    }
     override fun shareFile(file: File) {
         runCatching { Desktop.getDesktop().open(file.parentFile) }.onFailure { runCatching { ProcessBuilder("xdg-open", file.parentFile.path).start() } }
     }
@@ -137,8 +139,8 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     @Composable override fun rememberQrScanner(onResult: (String?) -> Unit): (() -> Unit)? = null
 
     /**
-     * Voice typing on a computer: records from the microphone until the button is pressed again, then has a
-     * connected service's transcription model turn it into text. That model recognises the language itself.
+     * Voice typing on a computer: records from the microphone until the button is pressed again, then turns
+     * it into text, with a connected service's transcription model or, with no such key, on the computer itself.
      */
     @Composable
     override fun rememberSpeech(g: Graph, onText: (String) -> Unit, onError: (String) -> Unit): Speech? {
@@ -154,9 +156,23 @@ class DesktopPlatform(override val filesDir: File) : Platform {
                     // Stopping the line ends the recording loop below, which then sends what it has.
                     listening.value = false
                     line[0]?.let { it.stop(); it.close() }
-                } else if (!Transcribe.available(g)) {
-                    error("Voice typing on a computer needs a Groq or OpenAI key. Add one in Settings, AI services.")
                 } else scope.launch {
+                    // With a Groq or OpenAI key the recording goes to its transcription model. Without one, it is
+                    // recognised on this computer, which needs a language pack fetched once.
+                    val lang = g.settings.value?.speechLang.orEmpty()
+                    val pack = if (Transcribe.available(g)) null else OfflineSpeech.packFor(lang) ?: run {
+                        val name = app.pocketagent.ai.SPEECH_LANGUAGES.firstOrNull { it.first == lang }?.second ?: lang
+                        error("Voice typing without a key does not know $name yet. Choose another language in Settings, or add a Groq or OpenAI key, which covers every language.")
+                        return@launch
+                    }
+                    if (pack != null && !OfflineSpeech.ready(filesDir, pack)) {
+                        busy.value = true
+                        error("Getting voice typing for ${pack.name} (about ${pack.megabytes} MB). This happens once.")
+                        val fetched = runCatching { withContext(Dispatchers.IO) { OfflineSpeech.download(filesDir, pack) } }.isSuccess
+                        busy.value = false
+                        error(if (fetched) "Voice typing is ready. Press the microphone and speak." else "Could not get voice typing. Check the internet and try again.")
+                        return@launch
+                    }
                     val format = AudioFormat(16000f, 16, 1, true, false)
                     val mic = try {
                         withContext(Dispatchers.IO) { (AudioSystem.getLine(DataLine.Info(TargetDataLine::class.java, format)) as TargetDataLine).also { it.open(format); it.start() } }
@@ -179,7 +195,8 @@ class DesktopPlatform(override val filesDir: File) : Platform {
                     if (pcm.size < 16000) return@launch
                     busy.value = true
                     try {
-                        val said = Transcribe.transcribe(g, Transcribe.wav(pcm, 16000), g.settings.value?.speechLang.orEmpty())
+                        val said = if (pack == null) Transcribe.transcribe(g, Transcribe.wav(pcm, 16000), lang)
+                        else withContext(Dispatchers.Default) { OfflineSpeech.transcribe(filesDir, pack, pcm) }
                         if (said.isNotBlank()) text(said)
                     } catch (e: Exception) { error(e.message ?: "Could not turn that into text.") }
                     busy.value = false

@@ -33,7 +33,7 @@ data class ToolOutcome(val text: String, val isError: Boolean = false)
  * The tools that run on the phone. Web search, page fetch and the code sandbox are not here:
  * those run on Anthropic's side and never touch the device.
  */
-class Tools(private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null) {
+class Tools(private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null, val media: Media? = null) {
 
     private fun prop(type: String, description: String) = buildJsonObject { put("type", type); put("description", description) }
 
@@ -82,8 +82,9 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
     private val byName = specs.associateBy { it.name }
 
     /** Tool definitions for the request, in a fixed order so the cached prefix stays identical. */
-    fun definitions(eager: Boolean): JsonArray = buildJsonArray {
-        for (s in specs + integrations?.specs().orEmpty()) add(buildJsonObject {
+    /** @param mediaOnly just the picture and video tools, which an ordinary chat has too; everything else belongs to Work */
+    fun definitions(eager: Boolean, mediaOnly: Boolean = false): JsonArray = buildJsonArray {
+        for (s in (if (mediaOnly) emptyList() else specs + integrations?.specs().orEmpty()) + media?.specs().orEmpty()) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
             if (eager) put("eager_input_streaming", true)
@@ -95,13 +96,13 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         })
     }
 
-    fun risk(name: String, input: JsonObject): Risk = integrations?.risk(name, input) ?: when (name) {
+    fun risk(name: String, input: JsonObject): Risk = integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
         MEMORY -> if (input.str("command") == "view") Risk.READ else Risk.WRITE
         else -> byName[name]?.risk ?: Risk.WRITE
     }
 
     /** One line for the timeline and the approval sheet. */
-    fun describe(name: String, input: JsonObject): String = integrations?.describe(name, input) ?: when (name) {
+    fun describe(name: String, input: JsonObject): String = integrations?.describe(name, input) ?: media?.describe(name, input) ?: when (name) {
         "list_files" -> "List " + (input.str("path")?.ifBlank { null } ?: "workspace")
         "read_file" -> "Read " + input.str("path").orEmpty()
         "write_file" -> "Write " + input.str("path").orEmpty()
@@ -124,7 +125,7 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
 
     /** Runs one call. Never throws: a failure comes back as an error result the model can read and react to. */
     fun run(chatId: Long, name: String, input: JsonObject): ToolOutcome = try {
-        val spec = byName[name] ?: integrations?.specs()?.firstOrNull { it.name == name }
+        val spec = byName[name] ?: integrations?.specs()?.firstOrNull { it.name == name } ?: media?.specs()?.firstOrNull { it.name == name }
         if (spec != null) {
             val missing = spec.required.filter { input[it] == null }
             if (missing.isNotEmpty()) throw ToolError("Missing required field: " + missing.joinToString())
@@ -152,7 +153,11 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         "get_time" -> ZonedDateTime.now().format(DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, HH:mm:ss zzz (xxx)"))
         "copy_to_clipboard" -> { host.copyToClipboard(need(input, "text")); "Copied to the clipboard." }
         MEMORY -> memoryCommand(input)
-        else -> if (integrations?.handles(name) == true) integrations.run(name, input) else throw ToolError("Unknown tool: $name")
+        else -> when {
+            integrations?.handles(name) == true -> integrations.run(name, input)
+            media?.handles(name) == true -> media.run(name, input)
+            else -> throw ToolError("Unknown tool: $name")
+        }
     }
 
     private fun need(input: JsonObject, k: String): String = input.str(k) ?: throw ToolError("Field \"$k\" must be a string.")

@@ -187,6 +187,7 @@ private fun Nav(host: Host) {
     val screen = current ?: return
 
     BoxWithConstraints(Modifier.fillMaxSize().background(cs.surfaceContainerLowest)) {
+        AppBackdrop(Modifier.fillMaxSize())
         val total = maxWidth
         val wide = total >= 840.dp
         CompositionLocalProvider(LocalWide provides wide) {
@@ -226,7 +227,7 @@ private fun Nav(host: Host) {
                             label = "detail",
                         ) { s ->
                             when (s) {
-                                is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = null, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat)
+                                is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = null, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
                                 Screen.Settings -> SettingsScreen(onBack = ::backToChat)
                                 Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)
                                 Screen.Schedules -> SchedulesScreen(onBack = ::backToChat, onOpenChat = openChat)
@@ -247,6 +248,9 @@ private fun Nav(host: Host) {
                     drawerState = drawer,
                     drawerContent = {
                         ModalDrawerSheet(Modifier.width(300.dp), drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)) {
+                          Box {
+                            AppBackdrop(Modifier.matchParentSize())
+                            Column(Modifier.fillMaxSize()) {
                             Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(40.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
@@ -271,6 +275,8 @@ private fun Nav(host: Host) {
                             }
                             Spacer(Modifier.weight(1f))
                             Text("Pocket Agent " + g.platform.versionName, Modifier.padding(start = 28.dp, bottom = 20.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium, color = cs.outline)
+                            }
+                          }
                         }
                     },
                 ) {
@@ -294,7 +300,7 @@ private fun Nav(host: Host) {
                         label = "nav",
                     ) { s ->
                         when (s) {
-                            is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = openDrawer, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat)
+                            is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = openDrawer, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
                             Screen.History -> HistoryScreen(onOpen = openChat, onMenu = openDrawer, onNew = newChat, selected = lastChat?.id)
                             Screen.Settings -> SettingsScreen(onBack = ::backToChat)
                             Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)

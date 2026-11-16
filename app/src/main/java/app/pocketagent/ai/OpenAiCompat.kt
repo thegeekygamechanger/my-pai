@@ -35,8 +35,8 @@ object OpenAiCompat {
 
     /** The phone's tools as "function" tools. The memory tool, which Claude knows natively, is spelled out here. */
     fun tools(cfg: RunConfig, clientTools: Tools?): JsonArray = buildJsonArray {
-        if (!cfg.agent || clientTools == null) return@buildJsonArray
-        for (t in clientTools.definitions(eager = false)) {
+        if (clientTools == null) return@buildJsonArray
+        for (t in clientTools.definitions(eager = false, mediaOnly = !cfg.agent)) {
             val o = t as JsonObject
             add(buildJsonObject {
                 put("type", "function")

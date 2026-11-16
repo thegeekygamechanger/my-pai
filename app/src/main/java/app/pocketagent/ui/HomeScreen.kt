@@ -101,7 +101,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     var deleting by remember { mutableStateOf<Chat?>(null) }
     val visible = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
 
-    Box(Modifier.fillMaxSize().background(if (wide) cs.surfaceContainerLowest else cs.surface)) {
+    Box(Modifier.fillMaxSize().background(if (wide) androidx.compose.ui.graphics.Color.Transparent else cs.surface)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = if (onMenu != null) 4.dp else 22.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
@@ -137,7 +137,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                         Box(Modifier.animateItem(fadeInSpec = spring(stiffness = 300f), placementSpec = spring(dampingRatio = 0.8f, stiffness = 350f))) {
                             Surface(
                                 shape = MaterialTheme.shapes.large, color = if (chat.id == selected) cs.secondaryContainer else if (chat.pinned) cs.surfaceContainer else androidx.compose.ui.graphics.Color.Transparent,
-                                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).combinedClickable(onClick = { onOpen(chat.id) }, onLongClick = { menu = true }),
+                                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).onSecondaryClick { menu = true }.combinedClickable(onClick = { onOpen(chat.id) }, onLongClick = { menu = true }),
                             ) {
                                 Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Surface(shape = CircleShape, color = if (chat.agent) cs.tertiaryContainer else cs.primaryContainer, modifier = Modifier.size(44.dp)) {

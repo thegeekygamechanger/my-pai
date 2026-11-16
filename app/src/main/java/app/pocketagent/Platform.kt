@@ -32,9 +32,10 @@ interface Platform {
     fun animationsEnabled(): Boolean
 
     fun copyToClipboard(text: String)
-    fun shareText(text: String)
     /** Hands a file from the workspace to another app (Android) or shows it in the file manager (computer). */
     fun shareFile(file: File)
+    /** Opens a file in whatever the device uses for that kind of file: a picture viewer, a video player. */
+    fun openFile(file: File)
     fun inForeground(): Boolean
 
     /** Called when the first run starts and when the last one ends: Android keeps the process alive meanwhile. */
