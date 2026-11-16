@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+keystore.properties
+*.jks
+*.apk
+.kotlin/
+live.properties
+*.tar.gz
+*.deb
+desktop/build/

@@ -1,0 +1,86 @@
+name: Desktop installers
+
+# Builds Pocket Agent for Windows (.exe and .msi) and Linux (.deb and .tar.gz) and attaches them to a release.
+# Started by hand for an existing release tag (Actions → Desktop installers → Run workflow).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the installers to (for example v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            task: packageDeb
+          - os: windows-latest
+            task: packageMsi packageExe
+    runs-on: ${{ matrix.os }}
+    env:
+      # Leaves the Android app out of the build, so no Android SDK is needed here.
+      POCKETAGENT_DESKTOP_ONLY: "1"
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build the app with its own Java runtime
+        shell: bash
+        run: ./gradlew :desktop:createDistributable --no-daemon
+
+      # The packaged app is run without a window: it must open its database and settings and draw its
+      # first screen with the runtime it ships with. The picture is kept with the run.
+      - name: Check that the packaged app starts
+        shell: bash
+        run: |
+          APP=desktop/build/compose/binaries/main/app
+          cp -r "$APP/PocketAgent" smoke
+          CFG=$(find smoke -name PocketAgent.cfg | head -1)
+          sed -i 's/app.mainclass=app.pocketagent.desktop.MainKt/app.mainclass=app.pocketagent.desktop.RenderKt/' "$CFG"
+          sed -i 's/\[JavaOptions\]/[JavaOptions]\njava-options=-Djava.awt.headless=true/' "$CFG"
+          EXE=$(find smoke -maxdepth 2 \( -name PocketAgent.exe -o -path '*/bin/PocketAgent' \) | head -1)
+          mkdir -p smoke-data smoke-out
+          "$EXE" "$PWD/smoke-data" "$PWD/smoke-out" wait:2500 first || true
+          sleep 5
+          ls -la smoke-out smoke-data
+          test -s smoke-out/first.png
+          test -s smoke-data/pocketagent.db
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: first-screen-${{ runner.os }}
+          path: smoke-out/first.png
+
+      - name: Make the installer
+        shell: bash
+        run: for t in ${{ matrix.task }}; do ./gradlew ":desktop:$t" --no-daemon; done
+
+      - name: Collect the files
+        shell: bash
+        run: |
+          V="${TAG#v}"
+          mkdir out
+          find desktop/build/compose/binaries -name '*.deb' -exec cp {} "out/PocketAgent-$V-linux-x64.deb" \;
+          find desktop/build/compose/binaries -name '*.msi' -exec cp {} "out/PocketAgent-$V-windows-x64.msi" \;
+          find desktop/build/compose/binaries -name '*.exe' -path '*main/exe*' -exec cp {} "out/PocketAgent-$V-windows-x64-setup.exe" \;
+          if [ "$RUNNER_OS" = "Linux" ]; then tar -C desktop/build/compose/binaries/main/app -czf "out/PocketAgent-$V-linux-x64.tar.gz" PocketAgent; fi
+          ls -la out
+
+      - name: Attach them to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" out/* --clobber

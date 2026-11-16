@@ -1,0 +1,12 @@
+Pocket Agent
+Copyright (c) 2026 Pocket Agent contributors. MIT License (see LICENSE).
+
+Bundled third-party material:
+- Inter typeface (The Inter Project Authors) - SIL Open Font License 1.1, see licenses/Inter-OFL.txt
+- TeX Gyre Heros typeface (GUST e-foundry) - GUST Font License, see licenses/GUST-FONT-LICENSE.txt
+- Kotlin, kotlinx.coroutines, kotlinx.serialization (JetBrains) - Apache License 2.0
+- Jetpack Compose, Material 3 and other AndroidX libraries (Google) - Apache License 2.0
+- Compose Multiplatform (JetBrains) - Apache License 2.0; Skia - BSD 3-Clause
+- OkHttp and Okio (Square) - Apache License 2.0
+- ZXing core - Apache License 2.0
+- SQLite - public domain

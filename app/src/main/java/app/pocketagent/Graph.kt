@@ -1,0 +1,227 @@
+package app.pocketagent
+
+import app.pocketagent.ai.ApiException
+import app.pocketagent.ai.ClaudeApi
+import app.pocketagent.ai.Decision
+import app.pocketagent.ai.Integrations
+import app.pocketagent.ai.ModelCaps
+import app.pocketagent.ai.ModelInfo
+import app.pocketagent.ai.OpenAiApi
+import app.pocketagent.ai.Provider
+import app.pocketagent.ai.Providers
+import app.pocketagent.ai.RunHost
+import app.pocketagent.ai.RunManager
+import app.pocketagent.ai.RunState
+import app.pocketagent.ai.Scheduler
+import app.pocketagent.ai.ToolHost
+import app.pocketagent.ai.Weather
+import app.pocketagent.ai.WeatherNow
+import app.pocketagent.ai.Tools
+import app.pocketagent.data.AppDb
+import app.pocketagent.data.Attachments
+import app.pocketagent.data.Blobs
+import app.pocketagent.data.Chat
+import app.pocketagent.data.ChatDao
+import app.pocketagent.data.SavedModel
+import app.pocketagent.data.Settings
+import app.pocketagent.data.SettingsStore
+import app.pocketagent.data.TrackedDao
+import app.pocketagent.data.Workspace
+import app.pocketagent.sync.SyncEngine
+import app.pocketagent.update.Updates
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.io.File
+
+/** Everything long-lived, built once. Small enough that a dependency-injection library would only add weight. */
+class Graph(val platform: Platform, val vault: Vault, val settingsStore: SettingsStore, val db: AppDb) {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val settings: StateFlow<Settings?> = settingsStore.flow.stateIn(scope, SharingStarted.Eagerly, null)
+    private val filesDir = platform.filesDir
+    val workspace = Workspace(File(filesDir, "workspace"))
+    val memory = Workspace(File(filesDir, "memory"))
+    val attach = Attachments(File(filesDir, "att"))
+    val blobs = Blobs(File(filesDir, "blobs"))
+
+    /** The database with change tracking: what the screens and the run loop write through. */
+    val dao: ChatDao = TrackedDao(db.dao()) { change -> sync.localChange(change) }
+
+    val claude = ClaudeApi(baseUrl = { settings.value?.debugBaseUrl?.takeIf { platform.debug && it.isNotBlank() } ?: ClaudeApi.PRODUCTION })
+    val openai = OpenAiApi()
+
+    private val toolHost = object : ToolHost {
+        override fun copyToClipboard(text: String) = platform.copyToClipboard(text)
+        override fun tasksChanged(chatId: Long, tasksJson: String) = runBlocking { dao.setTasks(chatId, tasksJson) }
+    }
+    val integrations = Integrations({ name -> vault.read(name) })
+    val tools = Tools(workspace, memory, toolHost, integrations)
+
+    private val runHost = object : RunHost {
+        override suspend fun settings(): Settings = settingsStore.flow.first()
+        override fun provider(id: String): Provider? = this@Graph.provider(id)
+        override fun key(providerId: String): String? = keyFor(providerId)
+        override fun modelInfo(id: String): ModelInfo? = allModels().firstOrNull { it.id == id }
+        override fun attachment(path: String): ByteArray? = attach.file(path).takeIf { it.isFile }?.readBytes()
+        override fun runsChanged(active: Boolean) = platform.runsChanged(active)
+        override fun finished(chat: Chat, replyPreview: String, failed: Boolean) {
+            sync.filesMayHaveChanged()
+            if (!platform.inForeground()) platform.notifyFinished(chat, replyPreview, failed)
+        }
+        override fun approvalNeeded(chat: Chat, title: String) { if (!platform.inForeground()) platform.notifyApproval(chat, title) }
+        override fun approvalResolved(chatId: Long) = platform.clearApprovalNotice(chatId)
+    }
+    val runs = RunManager(dao, claude, openai, tools, blobs, runHost, scope)
+
+    val sync: SyncEngine by lazy { SyncEngine(this) }
+    val updates: Updates by lazy { platform.makeUpdates(this) }
+    val scheduler: Scheduler by lazy { Scheduler(this) }
+    /** The weather in the user's city, when they have set one; refreshed every half hour while the app is open. */
+    val weather = MutableStateFlow<WeatherNow?>(null)
+
+    /** Runs on this device and runs on linked devices, as one map for the screens. */
+    val allRuns: StateFlow<Map<Long, RunState>> by lazy {
+        combine(runs.runs, sync.remoteRuns) { local, remote -> remote + local }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+    }
+
+    /** Stops a run wherever it is running. */
+    fun stopRun(chatId: Long) { if (runs.isRunning(chatId)) runs.stop(chatId) else sync.sendStop(chatId) }
+    fun decide(chatId: Long, decision: Decision) { if (runs.isRunning(chatId)) runs.decide(chatId, decision) else sync.sendDecision(chatId, decision) }
+
+    // ---- services and keys
+
+    fun providers(): List<Provider> = Providers.PRESETS + settings.value?.customProviders.orEmpty()
+    fun provider(id: String): Provider? = providers().firstOrNull { it.id == id }
+    fun keyFor(providerId: String): String? = vault.read(Providers.vaultKey(providerId))?.takeIf { it.isNotBlank() }
+    /** The services that have a key, in the order they are listed. */
+    fun connected(): List<Provider> = providers().filter { keyFor(it.id) != null }
+
+    /** The models of one service: the list last fetched with the user's key, or a built-in one for Claude before that. */
+    fun models(providerId: String): List<ModelInfo> {
+        val saved = settings.value?.models?.get(providerId).orEmpty().map { ModelInfo(it.id, it.name.ifBlank { it.id }, it.maxInput, it.maxOutput, providerId) }
+        return saved.ifEmpty { if (providerId == Providers.ANTHROPIC) ModelCaps.BUILT_IN else emptyList() }
+    }
+    fun allModels(): List<ModelInfo> = connected().flatMap { models(it.id) }
+
+    private suspend fun fetchModels(provider: Provider, key: String): List<ModelInfo> =
+        if (provider.kind == "anthropic") claude.listModels(key) else openai.listModels(provider, key)
+
+    /** Fetches a service's model list with its saved key and remembers it. Throws if the key does not work. */
+    suspend fun refreshModels(provider: Provider): List<ModelInfo> {
+        val key = keyFor(provider.id) ?: throw ApiException(ApiException.Kind.NO_KEY, "No key")
+        return fetchModels(provider, key).also { saveModels(provider, it) }
+    }
+
+    private suspend fun saveModels(provider: Provider, list: List<ModelInfo>) {
+        if (list.isEmpty()) return
+        settingsStore.update { it.copy(models = it.models + (provider.id to list.take(600).map { m -> SavedModel(m.id, m.name, m.maxInput, m.maxOutput) })) }
+    }
+
+    /**
+     * Checks a pasted key against its service and, if it works, stores it.
+     * @return a message to show when the key is refused, or null when it is saved
+     */
+    suspend fun connect(provider: Provider, rawKey: String): String? {
+        val key = rawKey.trim()
+        if (key.length < 8 || key.any { it.isWhitespace() }) return "That does not look like an API key."
+        val models = try {
+            fetchModels(provider, key)
+        } catch (e: ApiException) {
+            // A wrong key is refused outright. Any other answer (some services have no model list) is not the key's fault.
+            if (e.kind == ApiException.Kind.AUTH || e.kind == ApiException.Kind.PERMISSION || e.kind == ApiException.Kind.NETWORK || provider.kind == "anthropic") return e.friendly
+            emptyList()
+        } catch (e: Exception) {
+            return "Could not check the key. Try again."
+        }
+        if (provider.custom) settingsStore.update { s -> if (s.customProviders.any { it.id == provider.id }) s else s.copy(customProviders = s.customProviders + provider) }
+        vault.write(Providers.vaultKey(provider.id), key)
+        saveModels(provider, models)
+        settingsStore.update { s ->
+            // The first service connected becomes the one new chats use.
+            val first = s.provider.isEmpty() || keyFor(s.provider) == null || !s.onboarded
+            val model = models.firstOrNull { it.id == ModelCaps.DEFAULT_MODEL }?.id ?: models.firstOrNull()?.id ?: (if (provider.kind == "anthropic") ModelCaps.DEFAULT_MODEL else "")
+            if (first) s.copy(provider = provider.id, model = model, sharedRev = System.currentTimeMillis()) else s.copy(sharedRev = System.currentTimeMillis())
+        }
+        sync.sharedSettingsChanged()
+        return null
+    }
+
+    suspend fun removeKey(providerId: String) {
+        vault.write(Providers.vaultKey(providerId), null)
+        settingsStore.update { s -> s.copy(customProviders = s.customProviders.filter { it.id != providerId }, models = s.models - providerId, sharedRev = System.currentTimeMillis()) }
+        sync.sharedSettingsChanged()
+    }
+
+    /** Stores (or with null, removes) a connection's secret and tells linked devices. */
+    suspend fun setConnection(values: Map<String, String?>) {
+        values.forEach { (name, value) -> vault.write(name, value?.takeIf { it.isNotBlank() }) }
+        settingsStore.update { it.copy(sharedRev = System.currentTimeMillis()) }
+        sync.sharedSettingsChanged()
+    }
+
+    /** Saves something every linked device shares (name, instructions and so on) and tells them. */
+    suspend fun updateShared(change: (Settings) -> Settings) {
+        settingsStore.update { change(it).copy(sharedRev = System.currentTimeMillis()) }
+        sync.sharedSettingsChanged()
+    }
+
+    suspend fun newChat(agent: Boolean = false): Long {
+        val s = settingsStore.flow.first()
+        val on = connected()
+        val provider = on.firstOrNull { it.id == s.provider } ?: on.firstOrNull() ?: Providers.PRESETS.first()
+        val list = models(provider.id)
+        val model = s.model.takeIf { id -> provider.id == s.provider && (list.isEmpty() || list.any { it.id == id }) } ?: list.firstOrNull { it.id == ModelCaps.DEFAULT_MODEL }?.id ?: list.firstOrNull()?.id ?: s.model
+        val now = System.currentTimeMillis()
+        return dao.insert(Chat(createdAt = now, updatedAt = now, agent = agent, provider = provider.id, model = model, effort = s.effort, web = s.web, permission = s.permission))
+    }
+
+    suspend fun deleteChat(id: Long) {
+        runs.stop(id)
+        val paths = Regex("\"path\":\"(att/[^\"]+)\"")
+        dao.messages(id).forEach { m -> paths.findAll(blobs.unpack(m.content)).forEach { attach.file(it.groupValues[1]).delete() } }
+        blobs.deleteFor(id)
+        dao.deleteChat(id)
+    }
+
+    /** Removes every chat, attachment, workspace file and memory note. The API key and settings stay. */
+    suspend fun deleteEverything() {
+        runs.stopAll()
+        dao.deleteAllChats()
+        attach.dir.deleteRecursively()
+        blobs.deleteAll()
+        workspace.root.deleteRecursively(); workspace.root.mkdirs()
+        memory.root.deleteRecursively(); memory.root.mkdirs()
+        sync.filesMayHaveChanged()
+    }
+
+    /** Called once at start. */
+    fun start() {
+        scope.launch {
+            // Empty chats that were opened and never used are not worth keeping.
+            db.dao().allChats().filter { it.title.isBlank() && it.updatedAt == it.createdAt }.forEach { c ->
+                if (db.dao().messages(c.id).isEmpty() && !runs.isRunning(c.id)) db.dao().deleteChat(c.id)
+            }
+            sync.start()
+            scheduler.start()
+        }
+        scope.launch {
+            var lastCity = ""
+            var lastAt = 0L
+            settingsStore.flow.collect { s ->
+                val city = s.city.trim()
+                val now = System.currentTimeMillis()
+                if (city.isEmpty()) { weather.value = null; lastCity = "" }
+                else if (city != lastCity || now - lastAt > 30 * 60_000) { lastCity = city; lastAt = now; weather.value = Weather.fetch(city) ?: weather.value }
+            }
+            runCatching { updates.check() }
+        }
+    }
+}
