@@ -62,7 +62,8 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     private val windows = System.getProperty("os.name").orEmpty().lowercase().contains("win")
 
     override val isDesktop = true
-    override val versionName: String = BuildInfo.VERSION
+    // The property lets a test pretend to be an older version, to see the update notice appear.
+    override val versionName: String = System.getProperty("pocketagent.testVersion") ?: BuildInfo.VERSION
     override val debug: Boolean = System.getProperty("pocketagent.debug") == "1"
     override val deviceName: String = runCatching { InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotBlank() && it != "localhost" } ?: if (windows) "Windows PC" else "Linux PC"
     override val system = if (windows) "windows" else "linux"
@@ -81,10 +82,12 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     }
 
     // A computer does not suspend an app that is merely in the background, so nothing has to keep a run alive.
-    override fun inForeground() = true
+    // "In front" means the window has the keyboard: minimised, or behind another app, it is not. A test can force the answer.
+    override fun inForeground(): Boolean = if (System.getProperty("pocketagent.testBackground") == "true") false else frame?.let { it.isVisible && it.isFocused && (it.extendedState and java.awt.Frame.ICONIFIED) == 0 } ?: true
     override fun runsChanged(active: Boolean) {}
-    override fun notifyFinished(chat: Chat, preview: String, failed: Boolean) {}
-    override fun notifyApproval(chat: Chat, title: String) {}
+    override fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean) =
+        DesktopNotify.show(filesDir, if (failed) "Stopped: ${chat.title.ifBlank { "Chat" }}" else chat.title.ifBlank { "Reply ready" }, preview.ifBlank { if (failed) "Open Pocket Agent to see what happened." else "The reply is ready." }, sound)
+    override fun notifyApproval(chat: Chat, title: String) = DesktopNotify.show(filesDir, "Needs your OK", title, false)
     override fun clearApprovalNotice(chatId: Long) {}
     override fun clearFinishedNotice(chatId: Long) {}
 

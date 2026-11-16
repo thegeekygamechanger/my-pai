@@ -1,0 +1,1 @@
+Pictures on request in any chat, even with only a Claude key. Notifications when a reply is ready while you are in another app, and when a scheduled task finishes. Updates are found by themselves. Settings has a new layout.

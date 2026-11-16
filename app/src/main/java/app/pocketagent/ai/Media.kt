@@ -32,6 +32,10 @@ class Media(
     private val openaiUrl: String = "https://api.openai.com/v1",
     private val geminiUrl: String = "https://generativelanguage.googleapis.com/v1beta",
     private val pollMs: Long = 5000,
+    /** Whether pictures may come from the free open-source service when no key of the person's own can make them. */
+    private val free: () -> Boolean = { false },
+    private val freeUrl: String = "https://image.pollinations.ai",
+    private val pollinationsUrl: String = "https://gen.pollinations.ai",
 ) {
     // A video can take minutes to come back, so reads are allowed to wait far longer than for ordinary calls.
     private val http by lazy {
@@ -40,22 +44,22 @@ class Media(
 
     private fun key(provider: String): String? = secret(Providers.vaultKey(provider))?.takeIf { it.isNotBlank() }
 
-    fun imageOn() = key("gemini") != null || key("openai") != null
-    fun videoOn() = key("gemini") != null
+    fun imageOn() = key("gemini") != null || key("openai") != null || key("pollinations") != null || free()
+    fun videoOn() = key("gemini") != null || key("pollinations") != null
 
     private fun prop(type: String, description: String) = buildJsonObject { put("type", type); put("description", description) }
     private fun choice(description: String, vararg values: String) = buildJsonObject { put("type", "string"); put("description", description); putJsonArray("enum") { values.forEach { add(it) } } }
 
     fun specs(): List<ToolSpec> = buildList {
         if (imageOn()) add(ToolSpec(
-            IMAGE, "Create a picture from a description and show it to the person in the chat. Use it when the person asks for an image, drawing, logo, poster, illustration or photo to be made. Write a full, specific prompt: subject, setting, style, lighting, and any text that must appear.",
+            IMAGE, "Create a picture from a description and show it to the person in the chat. Use it when the person asks for an image, drawing, logo, poster, illustration or photo to be made. Write a specific prompt of a few sentences: subject, setting, style, lighting, and any text that must appear. It can take up to a minute; call it once for each picture wanted and wait for the result.",
             Risk.READ, listOf("prompt"), buildJsonObject {
                 put("prompt", prop("string", "What the picture should show, in detail."))
                 put("shape", choice("The shape of the picture. Default square.", "square", "wide", "tall"))
             },
         ))
         if (videoOn()) add(ToolSpec(
-            VIDEO, "Create a short video clip (3 to 15 seconds, with sound) from a description and show it to the person in the chat. Use it only when the person asks for a video. It takes a minute or more and costs more than a picture. Write a full prompt: the scene, the action, the camera movement and the mood.",
+            VIDEO, "Create a short video clip (3 to 15 seconds) from a description and show it to the person in the chat. Use it only when the person asks for a video. It takes a minute or more and costs more than a picture. Write a full prompt: the scene, the action, the camera movement and the mood.",
             Risk.WRITE, listOf("prompt"), buildJsonObject {
                 put("prompt", prop("string", "What happens in the video, in detail."))
                 put("shape", choice("wide for a screen, tall for a phone. Default wide.", "wide", "tall"))
@@ -99,20 +103,30 @@ class Media(
 
     private fun image(prompt: String, shape: String): String {
         val problems = ArrayList<String>()
-        // Whichever connected service works: Gemini first, then OpenAI.
-        for (service in listOf("gemini", "openai")) {
-            val k = key(service) ?: continue
+        // Whichever connected service works: the person's own keys first, then the free open-source service.
+        for (service in listOf("gemini", "openai", "pollinations", "free")) {
+            val k = if (service == "free") "".takeIf { free() } else key(service)
+            k ?: continue
             try {
-                return saved(if (service == "gemini") geminiImage(k, prompt, shape) else openaiImage(k, prompt, shape), "picture")
+                return saved(when (service) {
+                    "gemini" -> geminiImage(k, prompt, shape)
+                    "openai" -> openaiImage(k, prompt, shape)
+                    "pollinations" -> pollinations("image", k, prompt, shape, POLLINATIONS_IMAGE, 0)
+                    else -> freeImage(prompt, shape)
+                }, "picture")
             } catch (e: ToolError) {
                 problems += e.message.orEmpty()
             }
         }
-        throw ToolError(problems.joinToString(" ").ifBlank { "Making pictures needs a Gemini or OpenAI key. Add one in Settings, AI services." })
+        throw ToolError(problems.joinToString(" ").ifBlank { "Making pictures is switched off. Turn on the free picture service in Settings, or add a Gemini, OpenAI or Pollinations key." })
     }
 
     private fun video(prompt: String, shape: String, seconds: Int): String {
-        val k = key("gemini") ?: throw ToolError("Making videos needs a Gemini key. Add one in Settings, AI services.")
+        val k = key("gemini") ?: run {
+            // No Gemini key: an open-source video model through the person's Pollinations key, where clips are five seconds.
+            val p = key("pollinations") ?: throw ToolError("Making videos needs a Gemini or Pollinations key. Add one in Settings, AI services. There is no free service for video.")
+            return saved(pollinations("video", p, prompt, shape, POLLINATIONS_VIDEO, 5), "video")
+        }
         val format = buildJsonObject { put("type", "video"); put("aspect_ratio", if (shape == "tall") "9:16" else "16:9"); put("duration", "${seconds}s") }
         val made = gemini(k, GEMINI_VIDEO, listOf("omni", "veo"), "video", emptyMap()) { model, plain ->
             buildJsonObject { put("model", model); put("input", prompt); if (!plain) { put("response_format", format); put("store", false) } }
@@ -212,6 +226,54 @@ class Media(
         }
     }
 
+    /**
+     * The free picture service: Pollinations, an open-source project running open models, with no key and no
+     * account. It allows one picture at a time and asks for a pause between them; when it says "not yet", the
+     * wait is short enough to sit out once.
+     */
+    private fun freeImage(prompt: String, shape: String): Made {
+        // The service draws up to 768 by 768 points in area, whatever the shape.
+        val (w, h) = when (shape) { "wide" -> 1024 to 576; "tall" -> 576 to 1024; else -> 768 to 768 }
+        val url = "$freeUrl/prompt/" + java.net.URLEncoder.encode(prompt.take(700), "UTF-8").replace("+", "%20") +
+            "?width=$w&height=$h&nologo=true&private=true&seed=" + (1..999_999).random()
+        // Two things are sat out rather than reported: "not yet" (its pause between pictures), and a passing fault at its end.
+        var waited = false
+        var faults = 0
+        while (true) {
+            http.newCall(Request.Builder().url(url).header("User-Agent", "PocketAgent").build()).execute().use { resp ->
+                if (resp.isSuccessful && resp.header("content-type").orEmpty().startsWith("image/")) return Made(resp.body.bytes(), null, resp.header("content-type")!!.substringBefore(';'))
+                val limited = resp.code == 402 || resp.code == 429
+                val pause = resp.header("Retry-After")?.toLongOrNull() ?: 46
+                // One line for anyone looking into a failed picture: the service's answer, never what was asked for.
+                System.err.println("free picture service: HTTP ${resp.code}, retry-after ${resp.header("Retry-After") ?: "none"}, ${resp.header("content-type") ?: "no type"}, body ${runCatching { resp.peekBody(160).string() }.getOrDefault("").take(160).replace('\n', ' ')}")
+                when {
+                    limited && !waited && pause <= 60 -> { waited = true; Thread.sleep(pause * 1000 + 1000) }
+                    resp.code >= 500 && faults < 2 -> { faults++; Thread.sleep(3000L * faults) }
+                    limited -> throw ToolError("The free picture service allows one picture every 45 seconds or so. Try again in a minute.")
+                    else -> throw ToolError("The free picture service could not make it (error ${resp.code}). Try again, or describe it differently.")
+                }
+            }
+        }
+    }
+
+    /** A picture or a video through the person's own Pollinations key, which opens its paid models: the answer is the file itself. */
+    private fun pollinations(kind: String, key: String, prompt: String, shape: String, model: String, seconds: Int): Made {
+        val (w, h) = when (shape) { "wide" -> 1280 to 720; "tall" -> 720 to 1280; else -> 1024 to 1024 }
+        val url = "$pollinationsUrl/$kind/" + java.net.URLEncoder.encode(prompt.take(1500), "UTF-8").replace("+", "%20") + "?model=$model" +
+            if (kind == "video") "&duration=$seconds&aspectRatio=" + (if (shape == "tall") "9:16" else "16:9") else "&width=$w&height=$h&nologo=true&private=true"
+        http.newCall(Request.Builder().url(url).header("Authorization", "Bearer $key").header("User-Agent", "PocketAgent").build()).execute().use { resp ->
+            val type = resp.header("content-type").orEmpty().substringBefore(';')
+            if (!resp.isSuccessful || !(type.startsWith("image/") || type.startsWith("video/"))) {
+                val reply = runCatching { parseObject(resp.body.string()) }.getOrNull() ?: JsonObject(emptyMap())
+                throw ToolError(friendly("Pollinations", resp.code, reply))
+            }
+            if (kind == "image") return Made(resp.body.bytes(), null, type)
+            val target = File(dir.also { it.mkdirs() }, "gen-" + UUID.randomUUID() + ".part")
+            target.outputStream().use { out -> resp.body.byteStream().copyTo(out) }
+            return Made(null, target, type)
+        }
+    }
+
     private fun saved(made: Made, what: String): String {
         val ext = when (made.mime.lowercase()) {
             "image/jpeg", "image/jpg" -> "jpg"; "image/webp" -> "webp"; "image/gif" -> "gif"
@@ -271,6 +333,9 @@ class Media(
         const val GEMINI_IMAGE = "gemini-nano-banana-2.1"
         const val GEMINI_VIDEO = "gemini-omni-1.2-flash"
         const val OPENAI_IMAGE = "gpt-image-2.5-sunburst"
+        /** Open-source models on Pollinations: FLUX schnell for pictures, Wan for video. */
+        const val POLLINATIONS_IMAGE = "black-forest-labs/flux.1-schnell"
+        const val POLLINATIONS_VIDEO = "alibaba/wan-2.2-fast"
         private const val MAX_WAIT_MS = 10 * 60_000L
         private val WORKING = setOf("in_progress", "queued", "running", "pending", "requires_action")
         /** How a created file is named inside a tool's result, which is how the chat finds it to show it. */

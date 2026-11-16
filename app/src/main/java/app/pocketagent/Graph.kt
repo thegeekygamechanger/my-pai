@@ -77,7 +77,7 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         app.pocketagent.sync.ShareHost(this, chatId).also { it.start(); shares[chatId] = it }
     }
 
-    val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir)
+    val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir, free = { settings.value?.freeImages != false })
     val tools = Tools(workspace, memory, toolHost, integrations, media)
 
     private val runHost = object : RunHost {
@@ -90,7 +90,10 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun runsChanged(active: Boolean) = platform.runsChanged(active)
         override fun finished(chat: Chat, replyPreview: String, failed: Boolean) {
             sync.filesMayHaveChanged()
-            if (!platform.inForeground()) platform.notifyFinished(chat, replyPreview, failed)
+            val s = settings.value
+            // A scheduled task announces its result with a sound wherever the person is; an ordinary reply only speaks up when they have gone to another app.
+            if (scheduler.wasScheduled(chat.id)) { if (s?.notifyTasks != false) platform.notifyFinished(chat, replyPreview, failed, sound = true) }
+            else if (!platform.inForeground() && s?.notifyReplies != false) platform.notifyFinished(chat, replyPreview, failed)
         }
         override fun approvalNeeded(chat: Chat, title: String) { if (!platform.inForeground()) platform.notifyApproval(chat, title) }
         override fun approvalResolved(chatId: Long) = platform.clearApprovalNotice(chatId)
@@ -237,7 +240,14 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
                 if (city.isEmpty()) { weather.value = null; lastCity = "" }
                 else if (city != lastCity || now - lastAt > 30 * 60_000) { lastCity = city; lastAt = now; weather.value = Weather.fetch(city) ?: weather.value }
             }
-            runCatching { updates.check() }
+        }
+        // Looking for a newer version has a coroutine to itself: at start, then again every half hour while the app
+        // stays open. (It used to sit after the loop above, which never ends, so it never ran.)
+        scope.launch {
+            while (true) {
+                runCatching { updates.check() }
+                kotlinx.coroutines.delay(app.pocketagent.update.Updates.AUTO_CHECK_MS)
+            }
         }
     }
 }

@@ -7,7 +7,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = 'https://github.com/thegeekygamechanger/pocket-agent'
 
 
-def page(title, body, desc, script=''):
+SITE = 'https://thegeekygamechanger.github.io/pocket-agent/'
+
+# What search engines read about the app itself: name, kind, price and where it runs.
+APP_DATA = '''<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Pocket Agent","applicationCategory":"ProductivityApplication","operatingSystem":"Android, Windows, Linux","description":"Free, open-source AI chat and agent app that runs on your own API keys. No ads, no subscription, no account.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://thegeekygamechanger.github.io/pocket-agent/","downloadUrl":"https://github.com/thegeekygamechanger/pocket-agent/releases/latest","codeRepository":"https://github.com/thegeekygamechanger/pocket-agent"}
+</script>
+'''
+
+
+def page(title, body, desc, script='', name='', extra=''):
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -15,7 +24,18 @@ def page(title, body, desc, script=''):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <meta name="description" content="{desc}">
-<link rel="icon" href="icon.png">
+<link rel="canonical" href="{SITE}{name}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pocket Agent">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta property="og:url" content="{SITE}{name}">
+<meta property="og:image" content="{SITE}shots/social.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta name="twitter:image" content="{SITE}shots/social.jpg">
+{extra}<link rel="icon" href="icon.png">
 <link rel="stylesheet" href="style.css">
 <script>
 // The colours behind the page follow the hour, as they do in the app.
@@ -123,12 +143,15 @@ def main():
     def grab(name):
         return re.search(r'private val %s = """\n(.*?)\n""".trimIndent\(\)' % name, src, re.S).group(1)
 
-    open(os.path.join(docs, 'index.html'), 'w').write(page('Pocket Agent', INDEX, 'Chat with AI or hand it work, on Android, Windows and Linux, with your own API keys. Free and open source.', SWITCH))
-    open(os.path.join(docs, 'terms.html'), 'w').write(page('Terms of use · Pocket Agent', '<article><h1>Terms of use</h1>\n' + markdown(grab('TERMS_TEXT')) + '\n</article>', 'Terms of use for Pocket Agent.'))
-    open(os.path.join(docs, 'privacy.html'), 'w').write(page('Privacy · Pocket Agent', '<article><h1>Privacy</h1>\n' + markdown(grab('PRIVACY_TEXT')) + '\n</article>', 'How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.'))
-    open(os.path.join(docs, 'open-source.html'), 'w').write(page('Open source · Pocket Agent', '<article><h1>Open source</h1>\n' + markdown(grab('LICENSES_TEXT')) + '\n</article>', 'Pocket Agent is open source under the MIT licence.'))
+    open(os.path.join(docs, 'index.html'), 'w').write(page('Pocket Agent: open-source AI chat and agent with your own API keys', INDEX, 'Free, open-source AI app for Android, Windows and Linux. Bring your own Claude, OpenAI or Gemini key: chat, or hand over a task. No ads, no subscription.', SWITCH, '', APP_DATA))
+    open(os.path.join(docs, 'terms.html'), 'w').write(page('Terms of use · Pocket Agent', '<article><h1>Terms of use</h1>\n' + markdown(grab('TERMS_TEXT')) + '\n</article>', 'Terms of use for Pocket Agent.', name='terms.html'))
+    open(os.path.join(docs, 'privacy.html'), 'w').write(page('Privacy · Pocket Agent', '<article><h1>Privacy</h1>\n' + markdown(grab('PRIVACY_TEXT')) + '\n</article>', 'How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.', name='privacy.html'))
+    open(os.path.join(docs, 'open-source.html'), 'w').write(page('Open source · Pocket Agent', '<article><h1>Open source</h1>\n' + markdown(grab('LICENSES_TEXT')) + '\n</article>', 'Pocket Agent is open source under the MIT licence.', name='open-source.html'))
     shutil.copy(os.path.join(ROOT, 'desktop/icons/icon.png'), os.path.join(docs, 'icon.png'))
     open(os.path.join(docs, '.nojekyll'), 'w').write('')
+    open(os.path.join(docs, 'robots.txt'), 'w').write('User-agent: *\nAllow: /\nSitemap: ' + SITE + 'sitemap.xml\n')
+    pages = ['', 'terms.html', 'privacy.html', 'open-source.html']
+    open(os.path.join(docs, 'sitemap.xml'), 'w').write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + ''.join('  <url><loc>' + SITE + p + '</loc></url>\n' for p in pages) + '</urlset>\n')
 
 
 if __name__ == '__main__':

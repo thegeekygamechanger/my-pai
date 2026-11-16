@@ -137,7 +137,9 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
     val list = settings?.schedules.orEmpty()
     var editing by remember { mutableStateOf<Schedule?>(null) }
     var adding by remember { mutableStateOf<Schedule?>(null) }
-    fun save(change: (List<Schedule>) -> List<Schedule>) { scope.launch { g.settingsStore.update { it.copy(schedules = change(it.schedules)) }; g.scheduler.arm() } }
+    // A scheduled task announces itself, so the phone is asked to allow notifications when one is saved.
+    val askNotifications = g.platform.rememberNotificationAsk()
+    fun save(change: (List<Schedule>) -> List<Schedule>) { askNotifications(); scope.launch { g.settingsStore.update { it.copy(schedules = change(it.schedules)) }; g.scheduler.arm() } }
     // Ideas that fit this person: ones for an account appear only when that account is connected, and an idea goes away once it is added.
     val connected = remember(settings?.sharedRev) { listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }) }
     val ideas = IDEAS.filter { i -> (i.needs == null || i.needs in connected) && list.none { it.title == i.task.title } }

@@ -31,7 +31,7 @@ class AndroidUpdates(private val g: Graph, private val app: Application) : Updat
     override suspend fun check(force: Boolean) {
         if (state.value is UpdateState.Downloading || state.value is UpdateState.Confirming) return
         val s = g.settingsStore.flow.first()
-        if (!force && (!s.autoUpdate || System.currentTimeMillis() - s.lastUpdateCheck < 24 * 3_600_000L)) return
+        if (!force && (!s.autoUpdate || System.currentTimeMillis() - s.lastUpdateCheck < Updates.AUTO_CHECK_MS - 60_000)) return
         state.value = UpdateState.Checking
         try {
             val info = Updates.latest(g.platform.versionName) { names -> names.firstOrNull { it.endsWith(".apk") } }

@@ -36,6 +36,7 @@ object Providers {
         Provider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "openai", "https://cloud.cerebras.ai", "csk-…", "Very fast open models"),
         Provider("xai", "xAI", "https://api.x.ai/v1", "openai", "https://console.x.ai", "xai-…", "Grok"),
         Provider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1", "openai", "https://build.nvidia.com", "nvapi-…", "Open models"),
+        Provider("pollinations", "Pollinations", "https://gen.pollinations.ai/v1", "openai", "https://enter.pollinations.ai", "", "Open models, with pictures and video"),
         Provider("huggingface", "Hugging Face", "https://router.huggingface.co/v1", "openai", "https://huggingface.co/settings/tokens", "hf_…", "Open models"),
     )
 

@@ -8,7 +8,7 @@ Chat with AI, or hand it work and let it get on with it. For Android, Windows an
 
 - **Your own keys.** Claude, OpenAI, OpenRouter, Groq, Gemini, Mistral, DeepSeek, Together, Fireworks, Cerebras, xAI, NVIDIA, Hugging Face, or any OpenAI-compatible endpoint. No account with us, no ads, no tracking.
 - **Chat and Work.** In Work mode the model works in steps with tools: files in a private workspace, memory notes, a task list, web search and a code sandbox (Claude models), GitHub and Gmail if you connect them. It asks before it changes anything, and always before something leaves your device (an email, a change on GitHub).
-- **Pictures and videos.** Ask for an image or a short video in any chat; it is made with your Gemini or OpenAI key and shown in the conversation.
+- **Pictures and videos.** Ask for a picture in any chat: it is made with your Gemini, OpenAI or Pollinations key, or, with none of those, by Pollinations' free open-source service. Short videos need a Gemini or Pollinations key.
 - **Keeps working.** Several chats and pieces of work can run at once and carry on when you switch apps.
 - **Scheduled tasks.** Have a chat or a piece of work run by itself at a set time.
 - **Voice typing** (on computers it works offline, with no key), a greeting that knows the hour and your weather, light and dark themes.

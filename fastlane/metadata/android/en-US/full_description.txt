@@ -1,0 +1,25 @@
+Pocket Agent is a free, open-source AI app. Add your own API key and chat, or hand over a piece of work and let it get on with it. There are no ads, no subscription and no account: your key talks to the AI service directly.
+
+<b>Your own keys</b>
+Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek and other OpenAI-compatible services. On Auto, each message goes to the model that suits it: the quick one for small questions, the strongest for hard ones.
+
+<b>Chat</b>
+Clear answers with web search, images and PDFs. You see the answer, not a wall of steps.
+
+<b>Work</b>
+Give it a task and it goes step by step with files in a private workspace, the web, and your GitHub and Gmail if you connect them. It always asks before it sends an email or changes anything.
+
+<b>Everything else</b>
+• Scheduled tasks that run by themselves and notify you
+• Pictures on request, in any chat
+• Voice typing
+• End-to-end encrypted sync with the Windows and Linux app, paired by QR code, through a relay that stores nothing
+• Share a single chat with a four-character code
+• App lock, light and dark themes
+
+<b>Private by design</b>
+Chats, files and keys stay on your device, encrypted. Nothing is collected and there is no tracking.
+
+Source code, the computer app and the relay are at https://github.com/thegeekygamechanger/pocket-agent (MIT licence).
+
+Pocket Agent is not affiliated with Anthropic, OpenAI, Google or any other AI service. You pay those services for what you use.

@@ -40,6 +40,11 @@ class Scheduler(private val g: Graph) {
         return due.mapNotNull { run(it, now) }
     }
 
+    private val started: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** True, once, for a chat that a task started by itself at its set time. */
+    fun wasScheduled(chatId: Long): Boolean = started.remove(chatId)
+
     suspend fun runNow(id: String): Long? = schedules().firstOrNull { it.id == id }?.let { run(it, System.currentTimeMillis(), manual = true) }
 
     private suspend fun run(s: Schedule, now: Long, manual: Boolean = false): Long? {
@@ -47,6 +52,7 @@ class Scheduler(private val g: Graph) {
         if (!manual) g.settingsStore.update { st -> st.copy(schedules = st.schedules.map { if (it.id == s.id) it.copy(lastRun = now, enabled = it.repeat != "once") else it }) }
         val chatId = g.newChat(agent = s.agent)
         g.dao.rename(chatId, s.title.ifBlank { "Scheduled task" })
+        if (!manual) started += chatId
         g.runs.send(chatId, JsonArray(listOf(buildJsonObject { put("type", "text"); put("text", s.prompt) })))
         return chatId
     }

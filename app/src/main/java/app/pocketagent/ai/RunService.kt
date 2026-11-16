@@ -32,6 +32,8 @@ class Notifier(private val ctx: Context) {
     fun createChannels() {
         nm.createNotificationChannel(NotificationChannel(CH_RUN, "Working", NotificationManager.IMPORTANCE_LOW).apply { description = "Shown while a reply or an agent run is in progress"; setShowBadge(false) })
         nm.createNotificationChannel(NotificationChannel(CH_DONE, "Replies", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "A reply finished while the app was in the background" })
+        // Scheduled tasks announce themselves: high importance gives the sound and the pop-up at the top of the screen.
+        nm.createNotificationChannel(NotificationChannel(CH_TASK, "Scheduled tasks", NotificationManager.IMPORTANCE_HIGH).apply { description = "A scheduled task has finished"; enableVibration(true) })
         nm.createNotificationChannel(NotificationChannel(CH_ASK, "Approvals", NotificationManager.IMPORTANCE_HIGH).apply { description = "The agent is waiting for your permission" })
     }
 
@@ -58,10 +60,13 @@ class Notifier(private val ctx: Context) {
 
     private fun post(id: Int, n: Notification) = runCatching { nm.notify(id, n) }
 
-    fun finished(chat: Chat, preview: String, failed: Boolean) {
+    /** @param task the chat came from a scheduled task, which is announced with a sound */
+    fun finished(chat: Chat, preview: String, failed: Boolean, task: Boolean = false) {
         post(
             ID_DONE_BASE + (chat.id % 10_000).toInt(),
-            NotificationCompat.Builder(ctx, CH_DONE)
+            NotificationCompat.Builder(ctx, if (task) CH_TASK else CH_DONE)
+                .setPriority(if (task) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+                .setCategory(if (task) NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_MESSAGE)
                 .setSmallIcon(R.drawable.ic_stat)
                 .setContentTitle(if (failed) "Stopped: ${chat.title.ifBlank { "Chat" }}" else chat.title.ifBlank { "Reply ready" })
                 .setContentText(preview.ifBlank { if (failed) "Open to see what happened." else "The reply is ready." })
@@ -93,6 +98,7 @@ class Notifier(private val ctx: Context) {
         const val CH_RUN = "run"
         const val CH_DONE = "done"
         const val CH_ASK = "ask"
+        const val CH_TASK = "task"
         const val ID_RUN = 1
         const val ID_DONE_BASE = 10_000
         const val ID_ASK_BASE = 30_000

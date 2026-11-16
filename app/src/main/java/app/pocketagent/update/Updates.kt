@@ -28,7 +28,7 @@ sealed interface UpdateState {
  */
 interface Updates {
     val state: StateFlow<UpdateState>
-    /** Looks for a newer release. Without [force] it does so at most once a day. */
+    /** Looks for a newer release. Without [force] it does so at most once every [AUTO_CHECK_MS]. */
     suspend fun check(force: Boolean = false)
     fun install(info: UpdateInfo)
     fun onAppForeground() {}
@@ -39,6 +39,8 @@ interface Updates {
         const val REPO = "thegeekygamechanger/pocket-agent"
         const val LATEST = "https://api.github.com/repos/$REPO/releases/latest"
         const val PAGE = "https://github.com/$REPO/releases/latest"
+        /** How often the app looks for a newer version by itself. One small request, so it can afford to be often. */
+        const val AUTO_CHECK_MS = 30 * 60_000L
         val http: OkHttpClient by lazy { OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
 
         /** True when version [candidate] is newer than [current] ("1.10.0" beats "1.9.3"). */
@@ -75,7 +77,12 @@ interface Updates {
             val version = location.substringAfter("/releases/tag/", "").removePrefix("v").trim('/')
             if (version.isEmpty() || !isNewer(version, current)) return@withContext null
             val name = pick(fileNames(version)) ?: return@withContext null
-            UpdateInfo(version, "", "https://github.com/$REPO/releases/download/v$version/$name", 0, name)
+            val url = "https://github.com/$REPO/releases/download/v$version/$name"
+            // A release appears a little before all its files do (the Windows and .deb ones are built afterwards).
+            // Until this system's file is really there, there is nothing to offer yet; the next look will find it.
+            val there = noFollow.newCall(Request.Builder().url(url).head().header("User-Agent", "PocketAgent").build()).execute().use { it.isRedirect || it.isSuccessful }
+            if (!there) return@withContext null
+            UpdateInfo(version, "", url, 0, name)
         }
     }
 }

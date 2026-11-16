@@ -35,6 +35,8 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
@@ -66,6 +68,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -86,27 +101,55 @@ import kotlinx.coroutines.launch
 
 private val LocalOpen = staticCompositionLocalOf<MutableState<String>> { error("no section state") }
 
-/** One section of Settings. Sections open one at a time, so the page stays short and easy to scan. */
+/**
+ * A labelled group of settings rows: a small heading, then the rows as joined tiles inside one rounded shape.
+ * While one section is open as a page of its own, the group steps aside and only that section is drawn.
+ */
+@Composable
+private fun Group(label: String, content: @Composable ColumnScope.() -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    if (LocalOpen.current.value.isNotEmpty()) { Column(content = content); return }
+    Text(label.uppercase(), Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp), color = cs.onSurfaceVariant)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
+}
+
+/** A tile of a group that holds a control directly, such as the theme switch, instead of leading to a page. */
+@Composable
+private fun Tile(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    if (LocalOpen.current.value.isNotEmpty()) return
+    Surface(shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(24.dp), tint = cs.onSurface)
+                Text(title, Modifier.padding(start = 14.dp), style = MaterialTheme.typography.titleMedium)
+            }
+            content()
+        }
+    }
+}
+
+/**
+ * One section of Settings. In the list it is a row: icon, name, a line saying how it is set, and an arrow.
+ * Tapping it opens the section as a page of its own, where its controls are.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Card(title: String, icon: ImageVector, summary: String = "", content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
     val open = LocalOpen.current
-    val isOpen = open.value == title
-    val turn by animateFloatAsState(if (isOpen) 180f else 0f, spring(dampingRatio = 0.7f, stiffness = 400f), label = "chevron")
-    val bg by animateColorAsState(if (isOpen) cs.surfaceContainer else cs.surfaceContainerLow, label = "section")
-    Surface(shape = MaterialTheme.shapes.extraLarge, color = bg, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Column(Modifier.animateContentSize(spring(dampingRatio = 0.85f, stiffness = 380f))) {
-            Row(Modifier.fillMaxWidth().clickable { open.value = if (isOpen) "" else title }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = if (isOpen) cs.primary else cs.secondaryContainer, modifier = Modifier.size(38.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = if (isOpen) cs.onPrimary else cs.onSecondaryContainer) }
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    if (summary.isNotEmpty() && !isOpen) Text(summary, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Icon(Icons.Rounded.ExpandMore, if (isOpen) "Close $title" else "Open $title", Modifier.rotate(turn), tint = cs.onSurfaceVariant)
+    if (open.value == title) { Column(Modifier.fillMaxWidth().padding(top = 8.dp), content = content); return }
+    if (open.value.isNotEmpty()) return
+    Surface(onClick = { open.value = title }, shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
             }
-            if (isOpen) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp), content = content)
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (summary.isNotEmpty()) Text(summary, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open $title", tint = cs.onSurfaceVariant)
         }
     }
 }
@@ -182,141 +225,161 @@ fun SettingsScreen(onBack: () -> Unit) {
     val connected = remember(s) { g.connected() }
     val syncStatus by g.sync.status.collectAsState()
     val updateState by g.updates.state.collectAsState()
+    val askNotifications = g.platform.rememberNotificationAsk()
 
+    val open = rememberSaveable { mutableStateOf("") }
+    // Back from a section's page returns to the list first; from the list it leaves Settings.
+    OnBack(open.value.isNotEmpty()) { open.value = "" }
     Column(Modifier.fillMaxSize().background(cs.surface).statusBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
-            Text("Settings", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.titleLarge)
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton({ if (open.value.isNotEmpty()) open.value = "" else onBack() }) {
+                Icon(if (wide && open.value.isEmpty()) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (open.value.isNotEmpty()) "Back to Settings" else if (wide) "Close" else "Back")
+            }
+            AnimatedContent(open.value.ifEmpty { "Settings" }, Modifier.padding(start = 12.dp), transitionSpec = { (fadeIn(spring(stiffness = 500f)) + slideInHorizontally(spring(dampingRatio = 0.8f, stiffness = 420f)) { it / 6 }) togetherWith fadeOut(spring(stiffness = 700f)) }, label = "title") { t ->
+                Text(t, style = MaterialTheme.typography.headlineMedium)
+            }
         }
-        val open = rememberSaveable { mutableStateOf("") }
         CompositionLocalProvider(LocalOpen provides open) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
-                Card("About you", Icons.Rounded.Person, listOf(s.name, s.role).filter { it.isNotBlank() }.joinToString(" · ")) {
-                    var name by remember { mutableStateOf(s.name) }
-                    OutlinedTextField(
-                        name, { name = it.take(40); shared { st -> st.copy(name = name.trim()) } }, Modifier.fillMaxWidth().padding(top = 6.dp), label = { Text("Your name") }, singleLine = true,
-                        shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    )
-                    var city by remember { mutableStateOf(s.city) }
-                    OutlinedTextField(
-                        city, { city = it.take(60); shared { st -> st.copy(city = city.trim()) } }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("City (optional)") }, singleLine = true,
-                        supportingText = { Text("For the weather in your greeting.") }, shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
-                    )
-                    Label("I am a")
-                    Choices(ROLES.map { it to it }, s.role, { v -> shared { it.copy(role = if (it.role == v) "" else v) } })
-                    Label("I like answers")
-                    Segmented(STYLES, s.style, { v -> shared { it.copy(style = v) } }, Modifier.fillMaxWidth())
-                    Label("Voice typing language", if (platform.isDesktop) "Automatic lets the speech model recognise the language itself." else "Automatic follows the phone's language. Pick one to speak in another.")
-                    Choices(SPEECH_LANGUAGES, s.speechLang, { v -> set { it.copy(speechLang = v) } }, Modifier.padding(bottom = 6.dp))
-                }
-
-                Card("AI services", Icons.Rounded.VpnKey, connected.joinToString { it.name }) {
-                    connected.forEach { p ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.VpnKey, null, Modifier.size(20.dp), tint = cs.primary)
-                            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                                Text(p.name, style = MaterialTheme.typography.bodyLarge)
-                                val k = g.keyFor(p.id).orEmpty()
-                                Text((if (k.length > 12) k.take(6) + "…" + k.takeLast(4) else "…") + " · ${g.models(p.id).size} models", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                Group("AI") {
+                    Card("AI services", Icons.Rounded.VpnKey, connected.joinToString { it.name }) {
+                        connected.forEach { p ->
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.VpnKey, null, Modifier.size(20.dp), tint = cs.primary)
+                                Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                                    Text(p.name, style = MaterialTheme.typography.bodyLarge)
+                                    val k = g.keyFor(p.id).orEmpty()
+                                    Text((if (k.length > 12) k.take(6) + "…" + k.takeLast(4) else "…") + " · ${g.models(p.id).size} models", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                }
+                                TextButton({ replacing = p }) { Text("Replace") }
+                                IconButton({ removing = p }) { Icon(Icons.Rounded.Close, "Remove ${p.name}", tint = cs.onSurfaceVariant) }
                             }
-                            TextButton({ replacing = p }) { Text("Replace") }
-                            IconButton({ removing = p }) { Icon(Icons.Rounded.Close, "Remove ${p.name}", tint = cs.onSurfaceVariant) }
                         }
+                        FilledTonalButton({ adding = true }, Modifier.padding(vertical = 6.dp)) { Text("Add a service") }
                     }
-                    FilledTonalButton({ adding = true }, Modifier.padding(vertical = 6.dp)) { Text("Add a service") }
-                }
-
-                Card("New chats", Icons.Rounded.AutoAwesome, defaultModel) {
-                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { pickModel = true }.padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Model", style = MaterialTheme.typography.bodyLarge)
-                            Text(defaultModel + (g.provider(s.provider)?.let { " · ${it.name}" } ?: ""), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
-                        }
-                        Text("Change", style = MaterialTheme.typography.labelLarge, color = cs.primary)
-                    }
-                    Label("Effort", EFFORT_HELP[s.effort].orEmpty())
-                    Segmented(ModelCaps.EFFORTS.map { it to (if (it == "medium") "Med" else EFFORT_LABELS[it] ?: it) }, s.effort, { v -> set { it.copy(effort = v) } }, Modifier.fillMaxWidth())
-                    SwitchRow("Web search", "Let new chats search the web (Claude models).", s.web) { v -> set { it.copy(web = v) } }
-                    Label("Longest reply", "The most a single reply can contain.")
-                    Segmented(listOf(8_000 to "Short", 32_000 to "Normal", 64_000 to "Long", 128_000 to "Max"), s.maxOutput, { v -> set { it.copy(maxOutput = v) } }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
-                }
-
-                Card("Your instructions", Icons.Rounded.EditNote, s.customInstructions.lineSequence().firstOrNull().orEmpty()) {
-                    var text by remember { mutableStateOf(s.customInstructions) }
-                    OutlinedTextField(
-                        text, { text = it.take(4000); shared { st -> st.copy(customInstructions = text) } },
-                        Modifier.fillMaxWidth().padding(vertical = 6.dp), minLines = 3, maxLines = 8, shape = MaterialTheme.shapes.large,
-                        placeholder = { Text("For example: answer in simple English, keep replies short.") },
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    )
-                }
-
-                Card("Connections", Icons.Rounded.Link, listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }).joinToString(" · ")) { ConnectionsSection() }
-
-                Card("Sync", Icons.Rounded.Sync, syncStatus.let { st -> if (!st.enabled) "Off" else if (st.peers.isEmpty()) "On" else "Live with ${st.peers.size} other" }) { SyncSection() }
-
-                Card("Work", Icons.Rounded.Checklist, "${s.maxSteps} steps") {
-                    Label("Permissions for new chats", PERMISSION_HELP[s.permission].orEmpty())
-                    Segmented(listOf("ask" to "Ask all", "auto_read" to "Ask to change", "full_auto" to "Full auto"), s.permission, { v -> set { it.copy(permission = v) } }, Modifier.fillMaxWidth())
-                    var steps by remember { mutableFloatStateOf(s.maxSteps.toFloat()) }
-                    Label("Step limit: ${steps.toInt()}", "Work pauses after this many steps in one run.")
-                    Slider(steps, { steps = it }, valueRange = 5f..100f, steps = 18, onValueChangeFinished = { set { it.copy(maxSteps = steps.toInt()) } })
-                    var budget by remember { mutableFloatStateOf(s.budgetK.toFloat()) }
-                    Label(if (budget < 50f) "Token limit: none" else "Token limit: ${formatTokens(budget.toLong() * 1000)}", "Work pauses when one run has used this many tokens.")
-                    Slider(budget, { budget = it }, valueRange = 0f..2000f, steps = 39, onValueChangeFinished = { set { it.copy(budgetK = if (budget < 50f) 0 else budget.toInt()) } })
-                }
-
-                Card("Reliability", Icons.Rounded.Shield) {
-                    SwitchRow("Summarise long chats", "When a chat gets very long, older messages are condensed so it can keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
-                    SwitchRow("Fall back when declined", "If the chosen Claude model declines a request, let another Claude model answer it.", s.fallbacks) { v -> set { it.copy(fallbacks = v) } }
-                }
-
-                if (!platform.isDesktop) Card("Security", Icons.Rounded.Lock, if (s.lock) "App lock on" else "") {
-                    val can = remember { platform.canLock }
-                    SwitchRow("App lock", if (can) "Ask for fingerprint, face or screen lock to open the app." else "Set a screen lock on this phone first.", s.lock, enabled = can) { v ->
-                        platform.authenticate(if (v) "Turn on app lock" else "Turn off app lock") { set { it.copy(lock = v) } }
-                    }
-                    if (s.lock) {
-                        Label("Lock after leaving the app")
-                        Segmented(listOf(0 to "At once", 60 to "1 minute", 300 to "5 minutes"), s.lockDelaySec, { v -> set { it.copy(lockDelaySec = v) } }, Modifier.fillMaxWidth())
-                    }
-                    SwitchRow("Hide screen content", "Blocks screenshots and blanks the app in the recent-apps view.", s.secureScreen) { v -> set { it.copy(secureScreen = v) } }
-                }
-
-                Card("Appearance", Icons.Rounded.Palette, s.theme.replaceFirstChar { it.uppercase() }) {
-                    Label("Theme")
-                    Segmented(listOf("system" to "System", "light" to "Light", "dark" to "Dark"), s.theme, { v -> set { it.copy(theme = v) } }, Modifier.fillMaxWidth())
-                    SwitchRow("Pure black", "Use true black backgrounds in the dark theme.", s.pureBlack) { v -> set { it.copy(pureBlack = v) } }
-                    if (platform.hasDynamicColors) SwitchRow("Wallpaper colours", "Take the app's colours from your wallpaper.", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
-                    if (!platform.isDesktop) SwitchRow("Vibration feedback", "A light tap when you send, approve or stop.", s.haptics) { v -> set { it.copy(haptics = v) } }
-                }
-
-                Card("Usage", Icons.Rounded.DataUsage) {
-                    val t = totals
-                    Label(
-                        if (t == null || (t.inTok ?: 0) + (t.outTok ?: 0) == 0L) "Nothing used yet"
-                        else "${formatTokens((t.inTok ?: 0) + (t.cacheReadTok ?: 0))} in · ${formatTokens(t.outTok ?: 0)} out" + formatCost(t.costMicros ?: 0).let { if (it.isEmpty()) "" else " · about $it" },
-                        "Across the chats on this device. Cost is an estimate for Claude models from list prices; your account with each service shows the real figure.",
-                    )
-                }
-
-                Card("App update", Icons.Rounded.SystemUpdateAlt, updateSummary(updateState)) { UpdateSection() }
-
-                Card("Data", Icons.Rounded.Storage) {
-                    Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton({
-                            note = "Checking…"
-                            scope.launch {
-                                val counts = connected.map { p -> runCatching { g.refreshModels(p).size }.getOrDefault(-1) }
-                                note = if (counts.any { it < 0 }) "Some lists could not be refreshed." else "Found ${counts.sum()} models."
+                    Card("New chats", Icons.Rounded.AutoAwesome, defaultModel) {
+                        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { pickModel = true }.padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Model", style = MaterialTheme.typography.bodyLarge)
+                                Text(defaultModel + (g.provider(s.provider)?.let { " · ${it.name}" } ?: ""), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                             }
-                        }) { Text("Refresh model lists") }
-                        OutlinedButton({ wiping = true }) { Text("Delete all data") }
+                            Text("Change", style = MaterialTheme.typography.labelLarge, color = cs.primary)
+                        }
+                        Label("Effort", EFFORT_HELP[s.effort].orEmpty())
+                        Segmented(ModelCaps.EFFORTS.map { it to (if (it == "medium") "Med" else EFFORT_LABELS[it] ?: it) }, s.effort, { v -> set { it.copy(effort = v) } }, Modifier.fillMaxWidth())
+                        SwitchRow("Web search", "Let new chats search the web (Claude models).", s.web) { v -> set { it.copy(web = v) } }
+                        Label("Longest reply", "The most a single reply can contain.")
+                        Segmented(listOf(8_000 to "Short", 32_000 to "Normal", 64_000 to "Long", 128_000 to "Max"), s.maxOutput, { v -> set { it.copy(maxOutput = v) } }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
                     }
-                    if (note.isNotEmpty()) Text(note, Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                    Card("Pictures and videos", Icons.Rounded.Image, if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) "Your own key" else if (s.freeImages) "Free pictures" else "Off") {
+                        Text(
+                            "Ask for a picture in any chat. With a Gemini, OpenAI or Pollinations key of your own it is made there, and videos too (Gemini or Pollinations). Without one, pictures can come from Pollinations, a free open-source service: what you describe is sent to it, and it makes one picture every 45 seconds or so.",
+                            Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                        )
+                        SwitchRow("Free picture service", "Use Pollinations when no key of mine can make the picture.", s.freeImages) { on -> scope.launch { g.settingsStore.update { it.copy(freeImages = on) } } }
+                    }
                 }
-
-                Text("Pocket Agent ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
+                Group("You") {
+                    Card("About you", Icons.Rounded.Person, listOf(s.name, s.role).filter { it.isNotBlank() }.joinToString(" · ")) {
+                        var name by remember { mutableStateOf(s.name) }
+                        OutlinedTextField(
+                            name, { name = it.take(40); shared { st -> st.copy(name = name.trim()) } }, Modifier.fillMaxWidth().padding(top = 6.dp), label = { Text("Your name") }, singleLine = true,
+                            shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        )
+                        var city by remember { mutableStateOf(s.city) }
+                        OutlinedTextField(
+                            city, { city = it.take(60); shared { st -> st.copy(city = city.trim()) } }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("City (optional)") }, singleLine = true,
+                            supportingText = { Text("For the weather in your greeting.") }, shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                        )
+                        Label("I am a")
+                        Choices(ROLES.map { it to it }, s.role, { v -> shared { it.copy(role = if (it.role == v) "" else v) } })
+                        Label("I like answers")
+                        Segmented(STYLES, s.style, { v -> shared { it.copy(style = v) } }, Modifier.fillMaxWidth())
+                        Label("Voice typing language", if (platform.isDesktop) "Automatic lets the speech model recognise the language itself." else "Automatic follows the phone's language. Pick one to speak in another.")
+                        Choices(SPEECH_LANGUAGES, s.speechLang, { v -> set { it.copy(speechLang = v) } }, Modifier.padding(bottom = 6.dp))
+                    }
+                    Card("Your instructions", Icons.Rounded.EditNote, s.customInstructions.lineSequence().firstOrNull().orEmpty()) {
+                        var text by remember { mutableStateOf(s.customInstructions) }
+                        OutlinedTextField(
+                            text, { text = it.take(4000); shared { st -> st.copy(customInstructions = text) } },
+                            Modifier.fillMaxWidth().padding(vertical = 6.dp), minLines = 3, maxLines = 8, shape = MaterialTheme.shapes.large,
+                            placeholder = { Text("For example: answer in simple English, keep replies short.") },
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        )
+                    }
+                }
+                Group("Work") {
+                    Card("Work", Icons.Rounded.Checklist, "${s.maxSteps} steps") {
+                        Label("Permissions for new chats", PERMISSION_HELP[s.permission].orEmpty())
+                        Segmented(listOf("ask" to "Ask all", "auto_read" to "Ask to change", "full_auto" to "Full auto"), s.permission, { v -> set { it.copy(permission = v) } }, Modifier.fillMaxWidth())
+                        var steps by remember { mutableFloatStateOf(s.maxSteps.toFloat()) }
+                        Label("Step limit: ${steps.toInt()}", "Work pauses after this many steps in one run.")
+                        Slider(steps, { steps = it }, valueRange = 5f..100f, steps = 18, onValueChangeFinished = { set { it.copy(maxSteps = steps.toInt()) } })
+                        var budget by remember { mutableFloatStateOf(s.budgetK.toFloat()) }
+                        Label(if (budget < 50f) "Token limit: none" else "Token limit: ${formatTokens(budget.toLong() * 1000)}", "Work pauses when one run has used this many tokens.")
+                        Slider(budget, { budget = it }, valueRange = 0f..2000f, steps = 39, onValueChangeFinished = { set { it.copy(budgetK = if (budget < 50f) 0 else budget.toInt()) } })
+                    }
+                    Card("Reliability", Icons.Rounded.Shield) {
+                        SwitchRow("Summarise long chats", "When a chat gets very long, older messages are condensed so it can keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
+                        SwitchRow("Fall back when declined", "If the chosen Claude model declines a request, let another Claude model answer it.", s.fallbacks) { v -> set { it.copy(fallbacks = v) } }
+                    }
+                }
+                Group("Connected") {
+                    Card("Connections", Icons.Rounded.Link, listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }).joinToString(" · ")) { ConnectionsSection() }
+                    Card("Sync", Icons.Rounded.Sync, syncStatus.let { st -> if (!st.enabled) "Off" else if (st.peers.isEmpty()) "On" else "Live with ${st.peers.size} other" }) { SyncSection() }
+                }
+                Group("Appearance") {
+                    Tile("Theme", Icons.Rounded.Palette) {
+                        Segmented(listOf("system" to "System", "light" to "Light", "dark" to "Dark"), s.theme, { v -> set { it.copy(theme = v) } }, Modifier.fillMaxWidth(), icons = mapOf(s.theme to Icons.Rounded.Check))
+                    }
+                    Card("Display", Icons.Rounded.Contrast, listOfNotNull("Pure black".takeIf { s.pureBlack }, "Wallpaper colours".takeIf { s.dynamicColor && platform.hasDynamicColors }).joinToString(" · ").ifEmpty { "Colours and feedback" }) {
+                        SwitchRow("Pure black", "Use true black backgrounds in the dark theme.", s.pureBlack) { v -> set { it.copy(pureBlack = v) } }
+                        if (platform.hasDynamicColors) SwitchRow("Wallpaper colours", "Take the app's colours from your wallpaper.", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
+                        if (!platform.isDesktop) SwitchRow("Vibration feedback", "A light tap when you send, approve or stop.", s.haptics) { v -> set { it.copy(haptics = v) } }
+                    }
+                }
+                Group("Alerts and safety") {
+                    Card("Notifications", Icons.Rounded.Notifications, when { s.notifyReplies && s.notifyTasks -> "On"; s.notifyReplies || s.notifyTasks -> "Partly on"; else -> "Off" }) {
+                        SwitchRow("Replies", "Tell me when a reply is ready while I am in another app.", s.notifyReplies) { on -> if (on) askNotifications(); scope.launch { g.settingsStore.update { it.copy(notifyReplies = on) } } }
+                        SwitchRow("Scheduled tasks", "Announce the result of a scheduled task at its time, with a sound.", s.notifyTasks) { on -> if (on) askNotifications(); scope.launch { g.settingsStore.update { it.copy(notifyTasks = on) } } }
+                    }
+                    if (!platform.isDesktop) Card("Security", Icons.Rounded.Lock, if (s.lock) "App lock on" else "") {
+                        val can = remember { platform.canLock }
+                        SwitchRow("App lock", if (can) "Ask for fingerprint, face or screen lock to open the app." else "Set a screen lock on this phone first.", s.lock, enabled = can) { v ->
+                            platform.authenticate(if (v) "Turn on app lock" else "Turn off app lock") { set { it.copy(lock = v) } }
+                        }
+                        if (s.lock) {
+                            Label("Lock after leaving the app")
+                            Segmented(listOf(0 to "At once", 60 to "1 minute", 300 to "5 minutes"), s.lockDelaySec, { v -> set { it.copy(lockDelaySec = v) } }, Modifier.fillMaxWidth())
+                        }
+                        SwitchRow("Hide screen content", "Blocks screenshots and blanks the app in the recent-apps view.", s.secureScreen) { v -> set { it.copy(secureScreen = v) } }
+                    }
+                }
+                Group("About") {
+                    Card("App update", Icons.Rounded.SystemUpdateAlt, updateSummary(updateState)) { UpdateSection() }
+                    Card("Usage", Icons.Rounded.DataUsage) {
+                        val t = totals
+                        Label(
+                            if (t == null || (t.inTok ?: 0) + (t.outTok ?: 0) == 0L) "Nothing used yet"
+                            else "${formatTokens((t.inTok ?: 0) + (t.cacheReadTok ?: 0))} in · ${formatTokens(t.outTok ?: 0)} out" + formatCost(t.costMicros ?: 0).let { if (it.isEmpty()) "" else " · about $it" },
+                            "Across the chats on this device. Cost is an estimate for Claude models from list prices; your account with each service shows the real figure.",
+                        )
+                    }
+                    Card("Data", Icons.Rounded.Storage) {
+                        Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton({
+                                note = "Checking…"
+                                scope.launch {
+                                    val counts = connected.map { p -> runCatching { g.refreshModels(p).size }.getOrDefault(-1) }
+                                    note = if (counts.any { it < 0 }) "Some lists could not be refreshed." else "Found ${counts.sum()} models."
+                                }
+                            }) { Text("Refresh model lists") }
+                            OutlinedButton({ wiping = true }) { Text("Delete all data") }
+                        }
+                        if (note.isNotEmpty()) Text(note, Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                    }
+                }
+                if (open.value.isEmpty()) Text("Pocket Agent ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
             }
         } }
     }

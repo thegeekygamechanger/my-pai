@@ -184,7 +184,7 @@ class AndroidPlatform(private val app: Application) : Platform {
 
     override fun inForeground(): Boolean = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
     override fun runsChanged(active: Boolean) { if (active) RunService.start(app) }
-    override fun notifyFinished(chat: Chat, preview: String, failed: Boolean) = notifier.finished(chat, preview, failed)
+    override fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean) = notifier.finished(chat, preview, failed, sound)
     override fun notifyApproval(chat: Chat, title: String) = notifier.approval(chat, title)
     override fun clearApprovalNotice(chatId: Long) = notifier.clearApproval(chatId)
     override fun clearFinishedNotice(chatId: Long) = notifier.clearDone(chatId)

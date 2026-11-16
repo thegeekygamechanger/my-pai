@@ -76,6 +76,24 @@ fun main(args: Array<String>) {
                 scene.sendKeyEvent(KeyEvent(key = Key.Enter, type = androidx.compose.ui.input.key.KeyEventType.KeyUp, nativeEvent = java.awt.event.KeyEvent(keySource, java.awt.event.KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, java.awt.event.KeyEvent.VK_ENTER, '\n')))
                 settle(500)
             }
+            s.startsWith("schedule=") -> {
+                // "schedule=<minutes from now>:<title>" adds a one-off scheduled task, as the Tasks screen would, to watch it fire.
+                val (mins, title) = s.removePrefix("schedule=").split(':', limit = 2)
+                val at = java.time.LocalTime.now().plusMinutes(mins.toLong())
+                graph.settingsStore.update {
+                    it.copy(schedules = it.schedules + app.pocketagent.data.Schedule(java.util.UUID.randomUUID().toString(), title.replace('_', ' '), "In one short line: what is 12 times 12?", false, at.hour, at.minute, "once", 1, true, 0, System.currentTimeMillis()))
+                }
+                graph.scheduler.arm()
+                println("scheduled for " + "%02d:%02d".format(at.hour, at.minute) + ", now " + java.time.LocalTime.now().withNano(0))
+                settle(400)
+            }
+            s == "state" -> {
+                // Prints the chats and scheduled tasks as they are stored, for a test to read.
+                val chats = graph.dao.allChats().filter { it.title.isNotBlank() }
+                for (c in chats) println("CHAT \"" + c.title + "\" messages=" + graph.dao.messages(c.id).size + " preview=" + c.preview.take(80).replace('\n', ' '))
+                for (t in graph.settings.value?.schedules.orEmpty()) println("TASK \"" + t.title + "\" at " + "%02d:%02d".format(t.hour, t.minute) + " enabled=" + t.enabled + " lastRun=" + (if (t.lastRun > 0) java.time.Instant.ofEpochMilli(t.lastRun).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0).toString() else "never"))
+                println("TIME " + java.time.LocalTime.now().withNano(0))
+            }
             s.startsWith("secret=") -> {
                 // "secret=<vault name>:env:NAME" stores a connection's secret for the test, taken from the environment.
                 val (name, given) = s.removePrefix("secret=").split(':', limit = 2)

@@ -397,6 +397,9 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                 }
             }
 
+            // A newer version is announced here, on the screen the app opens to, and one tap installs it.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) { UpdateBanner(Modifier.widthIn(max = 560.dp)) }
+
             // Messages. On a wide window the column is kept to a comfortable reading width.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {

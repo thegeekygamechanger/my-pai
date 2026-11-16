@@ -40,7 +40,8 @@ interface Platform {
 
     /** Called when the first run starts and when the last one ends: Android keeps the process alive meanwhile. */
     fun runsChanged(active: Boolean)
-    fun notifyFinished(chat: Chat, preview: String, failed: Boolean)
+    /** @param sound announce it with a sound even where a plain notice would be silent; used for scheduled tasks */
+    fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean = false)
     fun notifyApproval(chat: Chat, title: String)
     fun clearApprovalNotice(chatId: Long)
     fun clearFinishedNotice(chatId: Long)

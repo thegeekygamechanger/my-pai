@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy · Pocket Agent</title>
 <meta name="description" content="How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.">
+<link rel="canonical" href="https://thegeekygamechanger.github.io/pocket-agent/privacy.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pocket Agent">
+<meta property="og:title" content="Privacy · Pocket Agent">
+<meta property="og:description" content="How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.">
+<meta property="og:url" content="https://thegeekygamechanger.github.io/pocket-agent/privacy.html">
+<meta property="og:image" content="https://thegeekygamechanger.github.io/pocket-agent/shots/social.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Privacy · Pocket Agent">
+<meta name="twitter:description" content="How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.">
+<meta name="twitter:image" content="https://thegeekygamechanger.github.io/pocket-agent/shots/social.jpg">
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="style.css">
 <script>
@@ -26,7 +37,7 @@
 <ul>
 <li><strong>Your messages and attachments</strong> go straight from the app to the AI service you chose, over HTTPS, so it can reply. That service handles them under its own privacy policy.</li>
 <li><strong>Web search and code sandbox</strong>, when you switch them on, run on the AI service's side.</li>
-<li><strong>Pictures and videos</strong>, only when you ask for one: the description of what to create goes to Google (Gemini) or OpenAI with your own key for that service, and the result is saved on your device.</li>
+<li><strong>Pictures and videos</strong>, only when you ask for one: the description of what to create goes to Google (Gemini), OpenAI or Pollinations with your own key for that service, and the result is saved on your device. If none of your keys can make pictures, the description goes to Pollinations' free open-source service instead, without any key or account; you can switch that off in Settings.</li>
 <li><strong>Voice typing.</strong> On a phone, your speech is turned into text by the phone's own speech service. On a computer it goes to Groq or OpenAI if you added a key for one of them; with no such key it is recognised on the computer itself and never leaves it, after a language pack is fetched once from alphacephei.com.</li>
 <li><strong>Weather</strong>, only if you enter a city: the app asks Open-Meteo for the current weather there, to shape the greeting and the colours of the first screen. Open-Meteo sees the city and your IP address.</li>
 <li><strong>Update checks</strong> ask GitHub whether a newer release exists. GitHub sees your IP address, as any website does.</li>

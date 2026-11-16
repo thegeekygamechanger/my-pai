@@ -45,6 +45,12 @@ data class Settings(
     /** Web search is on for new chats unless the user turns it off (it applies to Claude models). */
     val web: Boolean = true,
     val showThinking: Boolean = true,
+    /** Pictures may be made by the free open-source service (Pollinations) when no key of the person's own can make them. */
+    val freeImages: Boolean = true,
+    /** Tell the person when a reply is ready while they are in another app. */
+    val notifyReplies: Boolean = true,
+    /** Announce the result of a scheduled task, with a sound. */
+    val notifyTasks: Boolean = true,
     /** True once the person has picked a model for new chats themselves. Until then new chats use Auto. */
     val modelChosen: Boolean = false,
     /** Show the reasoning and the steps (searches, pages, code) behind a reply. Off: only an animated line while it works. */
