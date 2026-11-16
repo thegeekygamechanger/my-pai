@@ -163,7 +163,7 @@ class AndroidPlatform(private val app: Application) : Platform {
 
     override fun copyToClipboard(text: String) {
         Handler(Looper.getMainLooper()).post {
-            (app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Pocket Agent", text))
+            (app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("My PAI", text))
         }
     }
 

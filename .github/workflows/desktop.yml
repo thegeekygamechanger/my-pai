@@ -1,6 +1,6 @@
 name: Desktop installers
 
-# Builds Pocket Agent for Windows (.exe and .msi) and Linux (.deb and .tar.gz) and attaches them to a release.
+# Builds My PAI for Windows (.exe and .msi) and Linux (.deb and .tar.gz) and attaches them to a release.
 # Started by hand for an existing release tag (Actions → Desktop installers → Run workflow).
 on:
   workflow_dispatch:
@@ -47,11 +47,11 @@ jobs:
         shell: bash
         run: |
           APP=desktop/build/compose/binaries/main/app
-          cp -r "$APP/PocketAgent" smoke
-          CFG=$(find smoke -name PocketAgent.cfg | head -1)
+          cp -r "$APP/MyPAI" smoke
+          CFG=$(find smoke -name MyPAI.cfg | head -1)
           sed -i 's/app.mainclass=app.pocketagent.desktop.MainKt/app.mainclass=app.pocketagent.desktop.RenderKt/' "$CFG"
           sed -i 's/\[JavaOptions\]/[JavaOptions]\njava-options=-Djava.awt.headless=true/' "$CFG"
-          EXE=$(find smoke -maxdepth 2 \( -name PocketAgent.exe -o -path '*/bin/PocketAgent' \) | head -1)
+          EXE=$(find smoke -maxdepth 2 \( -name MyPAI.exe -o -path '*/bin/MyPAI' \) | head -1)
           mkdir -p smoke-data smoke-out
           "$EXE" "$PWD/smoke-data" "$PWD/smoke-out" wait:2500 first || true
           sleep 5
@@ -73,10 +73,10 @@ jobs:
         run: |
           V="${TAG#v}"
           mkdir out
-          find desktop/build/compose/binaries -name '*.deb' -exec cp {} "out/PocketAgent-$V-linux-x64.deb" \;
-          find desktop/build/compose/binaries -name '*.msi' -exec cp {} "out/PocketAgent-$V-windows-x64.msi" \;
-          find desktop/build/compose/binaries -name '*.exe' -path '*main/exe*' -exec cp {} "out/PocketAgent-$V-windows-x64-setup.exe" \;
-          if [ "$RUNNER_OS" = "Linux" ]; then tar -C desktop/build/compose/binaries/main/app -czf "out/PocketAgent-$V-linux-x64.tar.gz" PocketAgent; fi
+          find desktop/build/compose/binaries -name '*.deb' -exec cp {} "out/MyPAI-$V-linux-x64.deb" \;
+          find desktop/build/compose/binaries -name '*.msi' -exec cp {} "out/MyPAI-$V-windows-x64.msi" \;
+          find desktop/build/compose/binaries -name '*.exe' -path '*main/exe*' -exec cp {} "out/MyPAI-$V-windows-x64-setup.exe" \;
+          if [ "$RUNNER_OS" = "Linux" ]; then tar -C desktop/build/compose/binaries/main/app -czf "out/MyPAI-$V-linux-x64.tar.gz" MyPAI; fi
           ls -la out
 
       - name: Attach them to the release

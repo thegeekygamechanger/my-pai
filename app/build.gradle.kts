@@ -21,11 +21,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.pocketagent"
+        applicationId = "app.mypai"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.1.8"
+        versionCode = 1
+        versionName = "1.0.0"
         vectorDrawables { useSupportLibrary = true }
     }
 

@@ -47,7 +47,7 @@ class Notifier(private val ctx: Context) {
         val stop = PendingIntent.getBroadcast(ctx, 1, Intent(ctx, RunActionReceiver::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(ctx, CH_RUN)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Pocket Agent is working")
+            .setContentTitle("My PAI is working")
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

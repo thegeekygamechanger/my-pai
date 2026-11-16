@@ -219,7 +219,7 @@ fun WelcomeScreen(onDone: () -> Unit) {
                     Icon(if (done) Icons.Rounded.Check else Icons.Rounded.AutoAwesome, null, Modifier.size(34.dp), tint = cs.onTertiaryContainer)
                 }
             }
-            Text("Pocket Agent", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.displaySmall)
+            Text("My PAI", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.displaySmall)
 
             Section(0, "About you") {
                 OutlinedTextField(

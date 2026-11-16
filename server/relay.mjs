@@ -1,4 +1,4 @@
-// Pocket Agent sync relay.
+// My PAI sync relay.
 //
 // Devices that share a pairing code meet in a "room" and pass each other encrypted messages through
 // this process. It is a switchboard and nothing more:
@@ -39,7 +39,7 @@ const RATE_POSTS = 600;
 const FEEDBACK_KEY = process.env.BREVO_API_KEY || '';
 const FEEDBACK_TO = process.env.FEEDBACK_TO || '';
 const FEEDBACK_FROM = process.env.FEEDBACK_FROM || '';
-const FEEDBACK_FROM_NAME = process.env.FEEDBACK_FROM_NAME || 'Pocket Agent';
+const FEEDBACK_FROM_NAME = process.env.FEEDBACK_FROM_NAME || 'My PAI';
 const FEEDBACK_PER_IP = Number(process.env.FEEDBACK_PER_IP || 3);
 const FEEDBACK_PER_DAY = Number(process.env.FEEDBACK_PER_DAY || 60);
 const FEEDBACK_URL = process.env.FEEDBACK_URL || 'https://api.brevo.com/v3/smtp/email';
@@ -182,7 +182,7 @@ function feedback(req, res) {
           sender: { email: FEEDBACK_FROM, name: FEEDBACK_FROM_NAME },
           to: [{ email: FEEDBACK_TO }],
           ...(email ? { replyTo: { email } } : {}),
-          subject: `Pocket Agent feedback${app ? ` (${app})` : ''}`,
+          subject: `My PAI feedback${app ? ` (${app})` : ''}`,
           textContent: `${message}\n\n--\nReply to: ${email || 'no address given'}\nApp: ${app || 'unknown'}`,
         }),
         signal: AbortSignal.timeout(15000),
@@ -226,4 +226,4 @@ setInterval(() => {
 server.headersTimeout = 20000;
 server.requestTimeout = 0;
 server.keepAliveTimeout = 65000;
-server.listen(PORT, HOST, () => console.log(`pocket-agent relay on ${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`my-pai relay on ${HOST}:${PORT}`));

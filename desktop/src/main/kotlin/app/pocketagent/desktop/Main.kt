@@ -42,7 +42,7 @@ fun main() {
         Window(
             onCloseRequest = { graph.runs.stopAll(); exitApplication() },
             state = state,
-            title = "Pocket Agent",
+            title = "My PAI",
             onPreviewKeyEvent = { e -> e.type == KeyEventType.KeyDown && e.key == Key.Escape && BackStack.back() },
         ) {
             LaunchedEffect(Unit) {

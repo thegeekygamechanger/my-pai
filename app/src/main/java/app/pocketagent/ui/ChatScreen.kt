@@ -534,7 +534,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         AlertDialog(
             onDismissRequest = { notFound = null },
             title = { Text("No shared chat found") },
-            text = { Text("Nothing is being shared under $code right now. A code works for ten minutes, and Pocket Agent has to be open on the device that shared it.") },
+            text = { Text("Nothing is being shared under $code right now. A code works for ten minutes, and My PAI has to be open on the device that shared it.") },
             confirmButton = { TextButton({ notFound = null; openShared(code, original) }) { Text("Try again") } },
             dismissButton = {
                 Row {

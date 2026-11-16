@@ -40,7 +40,7 @@ enum class Feature(val hints: List<String>) {
 
 object RequestBuilder {
     private const val BASE_SYSTEM =
-        "You are the assistant inside Pocket Agent, an app on the person's phone or computer. " +
+        "You are the assistant inside My PAI, an app on the person's phone or computer. " +
             "Replies are often read in a narrow chat view, so keep paragraphs short, use compact Markdown, and avoid wide tables. " +
             "When you have tools: files live in a private workspace folder on the device that persists between chats, and paths are relative to it. " +
             "If you have generate_image or generate_video, use them when the person asks for a picture or a video to be made; the result appears in the chat by itself, so do not paste links or file names for it. " +
@@ -77,7 +77,7 @@ object RequestBuilder {
     fun system(cfg: RunConfig, today: java.time.LocalDate = java.time.LocalDate.now()): String {
         val extra = cfg.customInstructions.trim()
         // Who made the app and which model is answering: people ask, and the model would otherwise guess at both.
-        val made = "Pocket Agent was developed by Harsh Kumar, a senior software engineer. The AI model writing these replies is ${modelCredit(cfg)}. " +
+        val made = "My PAI was developed by Harsh Kumar, a senior software engineer. The AI model writing these replies is ${modelCredit(cfg)}. " +
             "If the person asks who made, built, created or developed you or this app, tell them both things: who developed the app, and which AI model and company are behind the answers. Do not bring it up otherwise."
         val base = BASE_SYSTEM + "\n\n" + made + (if (cfg.agent && cfg.code && ModelCaps.adaptive(cfg.model)) "\n\n" + SANDBOX else "") + "\n\n" + DIRECT + "\n\nToday is " + today.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH)) + "."
         return if (extra.isEmpty()) base else "$base\n\nThe person's standing instructions:\n$extra"

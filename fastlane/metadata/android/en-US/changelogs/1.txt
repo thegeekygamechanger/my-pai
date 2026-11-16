@@ -1,0 +1,1 @@
+First release of My PAI, your personal AI: chat and step-by-step work with your own API keys, file making and conversion, scheduled tasks, encrypted sync and sharing.

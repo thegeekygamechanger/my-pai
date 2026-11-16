@@ -45,13 +45,13 @@ object Docs {
     }
 
     private val TERMS_TEXT = """
-Pocket Agent is free, open-source software. By using it you agree to the following.
+My PAI is free, open-source software. By using it you agree to the following.
 
 ## Your keys and your costs
 You connect the app to AI services with your own API keys. Each request you send is made under your account with that service, and that service bills you for it. Keep an eye on your usage there; the cost shown in the app is only an estimate.
 
 ## The AI services
-Replies come from the service you chose (Anthropic, OpenAI, OpenRouter, Groq, Google and others). Their own terms and usage policies apply to what you send them and what they return. Pocket Agent is not affiliated with any of them.
+Replies come from the service you chose (Anthropic, OpenAI, OpenRouter, Groq, Google and others). Their own terms and usage policies apply to what you send them and what they return. My PAI is not affiliated with any of them.
 
 ## What Work mode does
 In Work mode the model can read and write files in the app's workspace folder, keep memory notes, search the web and run code on the service's side. It asks before changing things unless you choose "Full auto". You are responsible for what you ask it to do and for checking its work.
@@ -70,7 +70,7 @@ These terms may change with a new version of the app. The current text is always
 """.trimIndent()
 
     private val PRIVACY_TEXT = """
-Pocket Agent has no accounts, no ads and no analytics. There is no Pocket Agent server that holds your data.
+My PAI has no accounts, no ads and no analytics. There is no My PAI server that holds your data.
 
 ## What stays on your device
 Your chats, attachments, workspace files, memory notes and settings are stored on this device, in the app's private storage. Your API keys and sync code are encrypted: on Android with a key held in the Android Keystore, on a computer with a key in a file only your user account can read. Nothing is included in cloud backups.
@@ -104,10 +104,10 @@ The app is not directed at children. The AI services set their own minimum ages.
 """.trimIndent()
 
     private val LICENSES_TEXT = """
-Pocket Agent is open source under the MIT licence. Its source code is at github.com/thegeekygamechanger/pocket-agent.
+My PAI is open source under the MIT licence. Its source code is at github.com/thegeekygamechanger/my-pai.
 
 ## MIT License
-Copyright (c) 2026 Pocket Agent contributors
+Copyright (c) 2026 My PAI contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

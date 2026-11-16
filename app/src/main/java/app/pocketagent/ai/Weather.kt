@@ -27,7 +27,7 @@ object Weather {
         else -> "cloudy"
     }
 
-    private fun get(url: okhttp3.HttpUrl) = http.newCall(Request.Builder().url(url).header("User-Agent", "PocketAgent").build()).execute().use { if (it.isSuccessful) parseObject(it.body.string()) else null }
+    private fun get(url: okhttp3.HttpUrl) = http.newCall(Request.Builder().url(url).header("User-Agent", "MyPAI").build()).execute().use { if (it.isSuccessful) parseObject(it.body.string()) else null }
 
     suspend fun fetch(city: String): WeatherNow? = withContext(Dispatchers.IO) {
         runCatching {

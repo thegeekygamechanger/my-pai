@@ -86,7 +86,7 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     override fun inForeground(): Boolean = if (System.getProperty("pocketagent.testBackground") == "true") false else frame?.let { it.isVisible && it.isFocused && (it.extendedState and java.awt.Frame.ICONIFIED) == 0 } ?: true
     override fun runsChanged(active: Boolean) {}
     override fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean) =
-        DesktopNotify.show(filesDir, if (failed) "Stopped: ${chat.title.ifBlank { "Chat" }}" else chat.title.ifBlank { "Reply ready" }, preview.ifBlank { if (failed) "Open Pocket Agent to see what happened." else "The reply is ready." }, sound)
+        DesktopNotify.show(filesDir, if (failed) "Stopped: ${chat.title.ifBlank { "Chat" }}" else chat.title.ifBlank { "Reply ready" }, preview.ifBlank { if (failed) "Open My PAI to see what happened." else "The reply is ready." }, sound)
     override fun notifyApproval(chat: Chat, title: String) = DesktopNotify.show(filesDir, "Needs your OK", title, false)
     override fun clearApprovalNotice(chatId: Long) {}
     override fun clearFinishedNotice(chatId: Long) {}
@@ -288,5 +288,9 @@ fun appDataDir(): File {
         os.contains("mac") -> File(home, "Library/Application Support")
         else -> System.getenv("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }?.let(::File) ?: File(home, ".local/share")
     }
-    return File(base, "PocketAgent").apply { mkdirs() }
+    val dir = File(base, "MyPAI")
+    // The app used to be called something else. What it kept under that name comes along, once.
+    val before = File(base, "Pocket" + "Agent")
+    if (!dir.exists() && before.isDirectory) runCatching { before.renameTo(dir) }
+    return dir.apply { mkdirs() }
 }

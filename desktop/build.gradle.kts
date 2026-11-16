@@ -1,6 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
-// Pocket Agent for Linux and Windows. The screens and the app's logic are the Android app's own source
+// My PAI for Linux and Windows. The screens and the app's logic are the Android app's own source
 // files (../app/src/main/java), compiled here unchanged; only what differs between a phone and a
 // computer lives in this module, behind the Platform interface.
 
@@ -13,7 +13,7 @@ plugins {
 }
 
 // Keep in step with versionName in app/build.gradle.kts.
-val appVersion = "1.1.8"
+val appVersion = "1.0.0"
 
 // Android-only files: each has a counterpart in this module under a different file name, or is not needed here.
 val androidOnly = listOf(
@@ -69,17 +69,17 @@ compose.desktop {
         mainClass = "app.pocketagent.desktop.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.AppImage)
-            packageName = "PocketAgent"
+            packageName = "MyPAI"
             packageVersion = appVersion
             description = "Chat and agent app for Claude and other AI services, with your own API keys"
-            vendor = "Pocket Agent"
+            vendor = "My PAI"
             licenseFile.set(rootProject.file("LICENSE"))
             modules("java.sql", "java.desktop", "java.naming", "jdk.unsupported", "java.net.http", "jdk.crypto.ec")
             linux { shortcut = true; menuGroup = "Utility"; iconFile.set(project.file("icons/icon.png")) }
             windows {
-                shortcut = true; menu = true; menuGroup = "Pocket Agent"; perUserInstall = true
+                shortcut = true; menu = true; menuGroup = "My PAI"; perUserInstall = true
                 // Stays the same for every version, so a newer installer replaces the older app instead of sitting beside it.
-                upgradeUuid = "b3e1c7a4-52d6-4f0b-9a38-7c1d2e5f6a90"
+                upgradeUuid = "91562554-15f9-44a6-952b-10630933042e"
                 iconFile.set(project.file("icons/icon.ico"))
             }
         }

@@ -24,9 +24,9 @@ object ShareCode {
     private const val LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ"
     private const val DIGITS = "23456789"
     private const val ALPHABET = LETTERS + DIGITS
-    private const val PREFIX = "pocketagent-share:"
+    private const val PREFIX = "mypai-share:"
     private val random = SecureRandom()
-    private val TAGGED = Regex("pocketagent-share:\\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)
+    private val TAGGED = Regex("mypai-share:\\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])", RegexOption.IGNORE_CASE)
 
     /** A new code. It always has a letter and a digit, so an ordinary four-letter word is never taken for one. */
     fun new(): String {

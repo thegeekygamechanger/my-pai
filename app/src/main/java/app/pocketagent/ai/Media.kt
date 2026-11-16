@@ -240,7 +240,7 @@ class Media(
         var waited = false
         var faults = 0
         while (true) {
-            http.newCall(Request.Builder().url(url).header("User-Agent", "PocketAgent").build()).execute().use { resp ->
+            http.newCall(Request.Builder().url(url).header("User-Agent", "MyPAI").build()).execute().use { resp ->
                 if (resp.isSuccessful && resp.header("content-type").orEmpty().startsWith("image/")) return Made(resp.body.bytes(), null, resp.header("content-type")!!.substringBefore(';'))
                 val limited = resp.code == 402 || resp.code == 429
                 val pause = resp.header("Retry-After")?.toLongOrNull() ?: 46
@@ -261,7 +261,7 @@ class Media(
         val (w, h) = when (shape) { "wide" -> 1280 to 720; "tall" -> 720 to 1280; else -> 1024 to 1024 }
         val url = "$pollinationsUrl/$kind/" + java.net.URLEncoder.encode(prompt.take(1500), "UTF-8").replace("+", "%20") + "?model=$model" +
             if (kind == "video") "&duration=$seconds&aspectRatio=" + (if (shape == "tall") "9:16" else "16:9") else "&width=$w&height=$h&nologo=true&private=true"
-        http.newCall(Request.Builder().url(url).header("Authorization", "Bearer $key").header("User-Agent", "PocketAgent").build()).execute().use { resp ->
+        http.newCall(Request.Builder().url(url).header("Authorization", "Bearer $key").header("User-Agent", "MyPAI").build()).execute().use { resp ->
             val type = resp.header("content-type").orEmpty().substringBefore(';')
             if (!resp.isSuccessful || !(type.startsWith("image/") || type.startsWith("video/"))) {
                 val reply = runCatching { parseObject(resp.body.string()) }.getOrNull() ?: JsonObject(emptyMap())

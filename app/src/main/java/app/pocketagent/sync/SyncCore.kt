@@ -49,14 +49,14 @@ object SyncCode {
     /** "ABCDE-FGHJK-…" for showing to a person. */
     fun pretty(code: String): String = code.chunked(5).joinToString("-")
 
-    fun qr(code: String, purpose: String): String = "pocketagent-$purpose:$code"
+    fun qr(code: String, purpose: String): String = "mypai-$purpose:$code"
 
     /** Accepts what a person types or what a scanned QR code holds; null if it is not a code. */
     fun parse(input: String): Pair<String, String?>? {
         val text = input.trim()
         val purpose = when {
-            text.startsWith("pocketagent-sync:", true) -> SYNC
-            text.startsWith("pocketagent-share:", true) -> SHARE
+            text.startsWith("mypai-sync:", true) -> SYNC
+            text.startsWith("mypai-share:", true) -> SHARE
             else -> null
         }
         val code = text.substringAfter(':', text).uppercase().filter { it in ALPHABET }

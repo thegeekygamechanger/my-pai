@@ -333,7 +333,7 @@ private fun SideMenu(
             ) {
                 Icon(Icons.Rounded.AutoAwesome, if (onMark != null) "Collapse the side menu" else null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
             }
-            Text("Pocket Agent", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1)
+            Text("My PAI", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1)
         }
         val item = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
         NavigationDrawerItem({ Text("New chat") }, false, onNew, item, icon = { Icon(Icons.Rounded.Add, null) })
@@ -379,7 +379,7 @@ private fun SideMenu(
 
         // The foot of the menu: the version on one side, Settings on the other. Terms, privacy and licences are inside Settings.
         Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 16.dp, top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Pocket Agent " + g.platform.versionName, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.outline, maxLines = 1)
+            Text("My PAI " + g.platform.versionName, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.outline, maxLines = 1)
             val inSettings = screen == Screen.Settings || screen is Screen.Doc
             androidx.compose.material3.Surface(
                 onClick = { onGo(Screen.Settings) }, shape = androidx.compose.foundation.shape.CircleShape,
@@ -399,12 +399,12 @@ private fun SideMenu(
 private fun LockScreen(onUnlock: () -> Unit) {
     val g = LocalGraph.current
     val cs = MaterialTheme.colorScheme
-    LaunchedEffect(Unit) { g.platform.authenticate("Unlock Pocket Agent", onUnlock) }
+    LaunchedEffect(Unit) { g.platform.authenticate("Unlock My PAI", onUnlock) }
     Column(Modifier.fillMaxSize().background(cs.surface), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.size(96.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
             Icon(Icons.Rounded.Lock, null, Modifier.size(36.dp), tint = cs.onPrimaryContainer)
         }
-        Text("Pocket Agent is locked", Modifier.padding(top = 22.dp), style = MaterialTheme.typography.titleLarge)
-        Button({ g.platform.authenticate("Unlock Pocket Agent", onUnlock) }, Modifier.padding(top = 18.dp)) { Text("Unlock") }
+        Text("My PAI is locked", Modifier.padding(top = 22.dp), style = MaterialTheme.typography.titleLarge)
+        Button({ g.platform.authenticate("Unlock My PAI", onUnlock) }, Modifier.padding(top = 18.dp)) { Text("Unlock") }
     }
 }

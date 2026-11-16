@@ -206,7 +206,7 @@ fun ShareChatDialog(chatId: Long, onDismiss: () -> Unit) {
                 Text(
                     when {
                         expired -> "This code has stopped working. Make a new one to share again."
-                        served == 0 -> "Copied. Send it to the other person: when they enter it in Pocket Agent's message box, this chat opens for them, and only this chat. The code works for ten minutes while Pocket Agent is open on this device."
+                        served == 0 -> "Copied. Send it to the other person: when they enter it in My PAI's message box, this chat opens for them, and only this chat. The code works for ten minutes while My PAI is open on this device."
                         else -> "Opened $served time${if (served == 1) "" else "s"}."
                     },
                     Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,

@@ -36,7 +36,7 @@ interface Updates {
     fun openPermission() {}
 
     companion object {
-        const val REPO = "thegeekygamechanger/pocket-agent"
+        const val REPO = "thegeekygamechanger/my-pai"
         const val LATEST = "https://api.github.com/repos/$REPO/releases/latest"
         const val PAGE = "https://github.com/$REPO/releases/latest"
         /** How often the app looks for a newer version by itself. One small request, so it can afford to be often. */
@@ -55,7 +55,7 @@ interface Updates {
         }
 
         /** The names a release's files always have, for version [v]. */
-        fun fileNames(v: String) = listOf("PocketAgent-$v.apk", "PocketAgent-$v-windows-x64-setup.exe", "PocketAgent-$v-windows-x64.msi", "PocketAgent-$v-linux-x64.tar.gz", "PocketAgent-$v-linux-x64.deb")
+        fun fileNames(v: String) = listOf("MyPAI-$v.apk", "MyPAI-$v-windows-x64-setup.exe", "MyPAI-$v-windows-x64.msi", "MyPAI-$v-linux-x64.tar.gz", "MyPAI-$v-linux-x64.deb")
 
         /**
          * Finds the newest release and picks its file for this system. It asks the ordinary "latest release"
@@ -66,7 +66,7 @@ interface Updates {
          */
         suspend fun latest(current: String, pick: (List<String>) -> String?): UpdateInfo? = withContext(Dispatchers.IO) {
             val noFollow = http.newBuilder().followRedirects(false).build()
-            val location = noFollow.newCall(Request.Builder().url(PAGE).header("User-Agent", "PocketAgent").build()).execute().use { resp ->
+            val location = noFollow.newCall(Request.Builder().url(PAGE).header("User-Agent", "MyPAI").build()).execute().use { resp ->
                 when {
                     resp.code == 404 -> return@withContext null
                     resp.isRedirect -> resp.header("Location").orEmpty()
@@ -80,7 +80,7 @@ interface Updates {
             val url = "https://github.com/$REPO/releases/download/v$version/$name"
             // A release appears a little before all its files do (the Windows and .deb ones are built afterwards).
             // Until this system's file is really there, there is nothing to offer yet; the next look will find it.
-            val there = noFollow.newCall(Request.Builder().url(url).head().header("User-Agent", "PocketAgent").build()).execute().use { it.isRedirect || it.isSuccessful }
+            val there = noFollow.newCall(Request.Builder().url(url).head().header("User-Agent", "MyPAI").build()).execute().use { it.isRedirect || it.isSuccessful }
             if (!there) return@withContext null
             UpdateInfo(version, "", url, 0, name)
         }

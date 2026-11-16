@@ -100,7 +100,7 @@ class Integrations(private val secret: (String) -> String?, private val githubUr
 
     /** Checks a GitHub token and returns the account's login name. */
     fun checkGithub(token: String): String {
-        val req = Request.Builder().url("$githubUrl/user").header("authorization", "Bearer ${token.trim()}").header("accept", "application/vnd.github+json").header("user-agent", "PocketAgent").build()
+        val req = Request.Builder().url("$githubUrl/user").header("authorization", "Bearer ${token.trim()}").header("accept", "application/vnd.github+json").header("user-agent", "MyPAI").build()
         http.newCall(req).execute().use { resp ->
             if (resp.code == 401) throw ToolError("GitHub did not accept that token.")
             if (!resp.isSuccessful) throw ToolError("GitHub answered ${resp.code}.")
@@ -122,7 +122,7 @@ class Integrations(private val secret: (String) -> String?, private val githubUr
             .header("authorization", "Bearer $token")
             .header("accept", if (input.bool("raw") == true) "application/vnd.github.raw+json" else "application/vnd.github+json")
             .header("x-github-api-version", "2022-11-28")
-            .header("user-agent", "PocketAgent")
+            .header("user-agent", "MyPAI")
             .method(method, if (method == "GET") null else (body ?: JsonObject(emptyMap())).toString().toRequestBody(JSON))
             .build()
         http.newCall(req).execute().use { resp ->

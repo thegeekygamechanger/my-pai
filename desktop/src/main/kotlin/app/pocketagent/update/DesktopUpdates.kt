@@ -47,7 +47,7 @@ class DesktopUpdates(private val g: Graph) : Updates {
     }
 
     private suspend fun download(info: UpdateInfo, to: File) = withContext(Dispatchers.IO) {
-        Updates.http.newCall(Request.Builder().url(info.url).header("User-Agent", "PocketAgent").build()).execute().use { res ->
+        Updates.http.newCall(Request.Builder().url(info.url).header("User-Agent", "MyPAI").build()).execute().use { res ->
             if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
             val total = res.body.contentLength().takeIf { it > 0 } ?: info.sizeBytes
             to.outputStream().use { out ->
@@ -80,7 +80,7 @@ class DesktopUpdates(private val g: Graph) : Updates {
         state.value = UpdateState.Downloading(info, 0)
         g.scope.launch {
             try {
-                val tmp = File(System.getProperty("java.io.tmpdir"), "PocketAgent-update").apply { deleteRecursively(); mkdirs() }
+                val tmp = File(System.getProperty("java.io.tmpdir"), "MyPAI-update").apply { deleteRecursively(); mkdirs() }
                 val file = File(tmp, info.fileName)
                 download(info, file)
                 state.value = UpdateState.Confirming(info)
@@ -95,7 +95,7 @@ class DesktopUpdates(private val g: Graph) : Updates {
                         "#!/bin/sh\nsleep 2\nmkdir -p '${tmp.path}/new' && tar -xzf '${file.path}' -C '${tmp.path}/new' || exit 1\n" +
                             "src=\$(find '${tmp.path}/new' -maxdepth 2 -type d -name bin | head -1)\n[ -n \"\$src\" ] || exit 1\nsrc=\$(dirname \"\$src\")\n" +
                             "rm -rf '${target.path}.old' && mv '${target.path}' '${target.path}.old' && mv \"\$src\" '${target.path}' && rm -rf '${target.path}.old'\n" +
-                            "nohup '${target.path}/bin/PocketAgent' >/dev/null 2>&1 &\nrm -rf '${tmp.path}'\n"
+                            "nohup '${target.path}/bin/MyPAI' >/dev/null 2>&1 &\nrm -rf '${tmp.path}'\n"
                     )
                     script.setExecutable(true)
                     ProcessBuilder("sh", script.path).inheritIO().start()

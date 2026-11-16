@@ -227,7 +227,7 @@ class OpenAiApi {
         Request.Builder().url(provider.baseUrl.trimEnd('/') + path)
             .header("authorization", "Bearer $key")
             // OpenRouter shows these on its dashboard; other services ignore them.
-            .header("x-title", "Pocket Agent")
+            .header("x-title", "My PAI")
 
     /** The models a key can use. Also the way a pasted key is checked. */
     suspend fun listModels(provider: Provider, key: String): List<ModelInfo> = withContext(Dispatchers.IO) {

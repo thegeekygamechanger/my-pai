@@ -1,8 +1,8 @@
-# Pocket Agent
+# My PAI
 
-Chat with AI, or hand it work and let it get on with it. For Android, Windows and Linux, with your own API keys.
+Your personal AI. Chat with it, or hand it work and let it get on with it. For Android, Windows and Linux, with your own API keys.
 
-**[Download the latest release](https://github.com/thegeekygamechanger/pocket-agent/releases/latest)**
+**[Download the latest release](https://github.com/thegeekygamechanger/my-pai/releases/latest)**
 
 ## What it does
 
@@ -49,4 +49,4 @@ The same relay can pass on the notes people write under Settings, Send feedback.
 
 MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for bundled fonts and libraries.
 
-Pocket Agent is not affiliated with Anthropic, OpenAI, Google or any other AI service; their product names belong to their owners.
+My PAI is not affiliated with Anthropic, OpenAI, Google or any other AI service; their product names belong to their owners.

@@ -156,7 +156,7 @@ class Mail(private val user: String, private val pass: String, private val hosts
                 if (!r.startsWith(expect)) throw ToolError("$what: " + r.trim().take(200))
             }
             if (!reply().startsWith("220")) throw ToolError("The mail server is not accepting mail right now.")
-            say("EHLO pocketagent.local", "250", "The mail server refused the connection")
+            say("EHLO mypai.local", "250", "The mail server refused the connection")
             val auth = Base64.getEncoder().encodeToString("\u0000$user\u0000$pass".toByteArray())
             say("AUTH PLAIN $auth", "235", "The mail server refused the sign-in. Check the address and the app password")
             say("MAIL FROM:<$user>", "250", "The sender was refused")
@@ -169,7 +169,7 @@ class Mail(private val user: String, private val pass: String, private val hosts
                 if (cc.isNotEmpty()) append("Cc: ").append(cc.joinToString(", ")).append("\r\n")
                 append("Subject: ").append(Mime.encodeWord(subject)).append("\r\n")
                 append("Date: ").append(DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.US).format(ZonedDateTime.now())).append("\r\n")
-                append("Message-ID: <").append(UUID.randomUUID()).append("@pocketagent>\r\n")
+                append("Message-ID: <").append(UUID.randomUUID()).append("@mypai>\r\n")
                 append("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")
                 append(enc.encodeToString(body.toByteArray())).append("\r\n")
             }

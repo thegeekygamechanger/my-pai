@@ -169,7 +169,7 @@ fun main(args: Array<String>) {
         val host = ShareHost(a, first).also { it.start() }
         delay(600)
         check("a share code is four letters and digits, with both", host.code.length == 4 && host.code.any { it.isLetter() } && host.code.any { it.isDigit() } && host.code.all { it.isLetterOrDigit() })
-        check("it is found inside a pasted message, and alone", ShareCode.find("here you go pocketagent-share:${host.code.lowercase()} thanks")?.groupValues?.get(1)?.uppercase() == host.code && ShareCode.parse(" ${host.code} ") == host.code)
+        check("it is found inside a pasted message, and alone", ShareCode.find("here you go mypai-share:${host.code.lowercase()} thanks")?.groupValues?.get(1)?.uppercase() == host.code && ShareCode.parse(" ${host.code} ") == host.code)
         check("an ordinary word or number is not a code", ShareCode.parse("GOOD") == null && ShareCode.parse("2026") == null && ShareCode.parse("AB2") == null && ShareCode.find("pocketagent-share:ABCD2") == null)
         check("a share code is not a sync code", !stranger.sync.join(ShareCode.text(host.code)))
         val wrong = generateSequence { ShareCode.new() }.first { it != host.code }

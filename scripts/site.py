@@ -4,14 +4,14 @@
 import html, os, re, shutil
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO = 'https://github.com/thegeekygamechanger/pocket-agent'
+REPO = 'https://github.com/thegeekygamechanger/my-pai'
 
 
-SITE = 'https://thegeekygamechanger.github.io/pocket-agent/'
+SITE = 'https://thegeekygamechanger.github.io/my-pai/'
 
 # What search engines read about the app itself: name, kind, price and where it runs.
 APP_DATA = '''<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Pocket Agent","applicationCategory":"ProductivityApplication","operatingSystem":"Android, Windows, Linux","description":"Free, open-source AI chat and agent app that runs on your own API keys. No ads, no subscription, no account.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://thegeekygamechanger.github.io/pocket-agent/","downloadUrl":"https://github.com/thegeekygamechanger/pocket-agent/releases/latest","codeRepository":"https://github.com/thegeekygamechanger/pocket-agent"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"My PAI","applicationCategory":"ProductivityApplication","operatingSystem":"Android, Windows, Linux","description":"Free, open-source AI chat and agent app that runs on your own API keys. No ads, no subscription, no account.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://opensource.org/licenses/MIT","url":"https://thegeekygamechanger.github.io/my-pai/","downloadUrl":"https://github.com/thegeekygamechanger/my-pai/releases/latest","codeRepository":"https://github.com/thegeekygamechanger/my-pai"}
 </script>
 '''
 
@@ -26,7 +26,7 @@ def page(title, body, desc, script='', name='', extra=''):
 <meta name="description" content="{desc}">
 <link rel="canonical" href="{SITE}{name}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Pocket Agent">
+<meta property="og:site_name" content="My PAI">
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{desc}">
 <meta property="og:url" content="{SITE}{name}">
@@ -45,13 +45,13 @@ def page(title, body, desc, script='', name='', extra=''):
 <body data-device="desktop">
 <div class="wrap">
 <header>
-  <a class="mark" href="index.html"><img src="icon.png" alt="">Pocket Agent</a>
+  <a class="mark" href="index.html"><img src="icon.png" alt="">My PAI</a>
   <nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a class="pill" href="{REPO}/releases/latest">Download</a></nav>
 </header>
 {body}
 <footer>
   <a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a href="{REPO}">GitHub</a>
-  <p>Pocket Agent is open-source software, not affiliated with Anthropic, OpenAI, Google or any other AI service. Their product names are trademarks of their owners.</p>
+  <p>My PAI is open-source software, not affiliated with Anthropic, OpenAI, Google or any other AI service. Their product names are trademarks of their owners.</p>
 </footer>
 </div>
 {script}
@@ -67,8 +67,8 @@ def shot(name, alt):
 
 
 INDEX = f'''<section class="hero">
-  <h1>AI that gets on with it.</h1>
-  <p>Chat, or hand over a piece of work. Your own keys, on every device.</p>
+  <h1>Your personal AI that gets on with it.</h1>
+  <p>My PAI: chat, or hand over a piece of work. Your own keys, on every device.</p>
   <div class="switch" role="tablist" aria-label="Show the app on">
     <span class="thumb"></span>
     <button role="tab" data-show="desktop">Desktop</button>
@@ -143,10 +143,10 @@ def main():
     def grab(name):
         return re.search(r'private val %s = """\n(.*?)\n""".trimIndent\(\)' % name, src, re.S).group(1)
 
-    open(os.path.join(docs, 'index.html'), 'w').write(page('Pocket Agent: open-source AI chat and agent with your own API keys', INDEX, 'Free, open-source AI app for Android, Windows and Linux. Bring your own Claude, OpenAI or Gemini key: chat, or hand over a task. No ads, no subscription.', SWITCH, '', APP_DATA))
-    open(os.path.join(docs, 'terms.html'), 'w').write(page('Terms of use · Pocket Agent', '<article><h1>Terms of use</h1>\n' + markdown(grab('TERMS_TEXT')) + '\n</article>', 'Terms of use for Pocket Agent.', name='terms.html'))
-    open(os.path.join(docs, 'privacy.html'), 'w').write(page('Privacy · Pocket Agent', '<article><h1>Privacy</h1>\n' + markdown(grab('PRIVACY_TEXT')) + '\n</article>', 'How Pocket Agent handles your data: on your device, encrypted, with no account and no tracking.', name='privacy.html'))
-    open(os.path.join(docs, 'open-source.html'), 'w').write(page('Open source · Pocket Agent', '<article><h1>Open source</h1>\n' + markdown(grab('LICENSES_TEXT')) + '\n</article>', 'Pocket Agent is open source under the MIT licence.', name='open-source.html'))
+    open(os.path.join(docs, 'index.html'), 'w').write(page('My PAI: open-source AI chat and agent with your own API keys', INDEX, 'Free, open-source AI app for Android, Windows and Linux. Bring your own Claude, OpenAI or Gemini key: chat, or hand over a task. No ads, no subscription.', SWITCH, '', APP_DATA))
+    open(os.path.join(docs, 'terms.html'), 'w').write(page('Terms of use · My PAI', '<article><h1>Terms of use</h1>\n' + markdown(grab('TERMS_TEXT')) + '\n</article>', 'Terms of use for My PAI.', name='terms.html'))
+    open(os.path.join(docs, 'privacy.html'), 'w').write(page('Privacy · My PAI', '<article><h1>Privacy</h1>\n' + markdown(grab('PRIVACY_TEXT')) + '\n</article>', 'How My PAI handles your data: on your device, encrypted, with no account and no tracking.', name='privacy.html'))
+    open(os.path.join(docs, 'open-source.html'), 'w').write(page('Open source · My PAI', '<article><h1>Open source</h1>\n' + markdown(grab('LICENSES_TEXT')) + '\n</article>', 'My PAI is open source under the MIT licence.', name='open-source.html'))
     shutil.copy(os.path.join(ROOT, 'desktop/icons/icon.png'), os.path.join(docs, 'icon.png'))
     open(os.path.join(docs, '.nojekyll'), 'w').write('')
     open(os.path.join(docs, 'robots.txt'), 'w').write('User-agent: *\nAllow: /\nSitemap: ' + SITE + 'sitemap.xml\n')

@@ -75,10 +75,10 @@ class AndroidUpdates(private val g: Graph, private val app: Application) : Updat
                     }
                     sessionId = installer.createSession(params)
                     installer.openSession(sessionId).use { session ->
-                        Updates.http.newCall(Request.Builder().url(info.url).header("User-Agent", "PocketAgent").build()).execute().use { res ->
+                        Updates.http.newCall(Request.Builder().url(info.url).header("User-Agent", "MyPAI").build()).execute().use { res ->
                             if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
                             val total = res.body.contentLength().takeIf { it > 0 } ?: info.sizeBytes
-                            session.openWrite("PocketAgent.apk", 0, if (total > 0) total else -1).use { out ->
+                            session.openWrite("MyPAI.apk", 0, if (total > 0) total else -1).use { out ->
                                 val input = res.body.byteStream()
                                 val buffer = ByteArray(64 * 1024)
                                 var done = 0L

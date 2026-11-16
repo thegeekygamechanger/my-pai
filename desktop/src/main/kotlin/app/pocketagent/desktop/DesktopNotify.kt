@@ -35,7 +35,7 @@ object DesktopNotify {
         // The body is read as simple markup, so the three characters that mean something there are spelled out.
         val body = text.take(400).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         val args = buildList {
-            add("notify-send"); add("-a"); add("Pocket Agent")
+            add("notify-send"); add("-a"); add("My PAI")
             icon(dataDir)?.let { add("-i"); add(it.path) }
             add("--"); add(title.take(120)); add(body)
         }
@@ -49,7 +49,7 @@ object DesktopNotify {
         if (!SystemTray.isSupported()) return
         val icon = tray ?: run {
             val image = DesktopNotify::class.java.getResourceAsStream("/icon.png")?.use { javax.imageio.ImageIO.read(it) } ?: return
-            TrayIcon(image, "Pocket Agent").apply { isImageAutoSize = true }.also { SystemTray.getSystemTray().add(it); tray = it }
+            TrayIcon(image, "My PAI").apply { isImageAutoSize = true }.also { SystemTray.getSystemTray().add(it); tray = it }
         }
         icon.displayMessage(title.take(120), text.take(400), TrayIcon.MessageType.NONE)
     }
