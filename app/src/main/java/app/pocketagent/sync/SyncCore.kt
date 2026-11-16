@@ -265,6 +265,8 @@ class RelayLink(private val baseUrl: () -> String, val room: String, val deviceI
         const val MAX_PARTS = 2000
         private val BYTES = "application/octet-stream".toMediaType()
         private val http = OkHttpClient.Builder()
+        // Never carried from an https address to a plain http one, key and all.
+        .followSslRedirects(false)
             .connectTimeout(20, TimeUnit.SECONDS)
             // The relay sends a heartbeat every 20 seconds; silence for longer than this means the line is dead.
             .readTimeout(55, TimeUnit.SECONDS)

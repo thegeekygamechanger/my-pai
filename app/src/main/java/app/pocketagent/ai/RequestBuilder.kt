@@ -36,6 +36,8 @@ enum class Feature(val hints: List<String>) {
     EAGER(listOf("eager_input_streaming")),
     CACHE(listOf("cache_control")),
     EFFORT(listOf("reasoning")),
+    /** Tool definitions. Small models run on one's own computer often take none; the request is then sent without them. */
+    TOOLS(listOf("does not support tools", "tools are not supported", "tool use is not supported", "does not support function", "tool calling is not supported")),
 }
 
 object RequestBuilder {

@@ -209,7 +209,7 @@ private fun AddServiceDialog(initial: Provider?, exclude: Set<String>, onDismiss
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     fun save() {
-        if (busy || key.isBlank()) return
+        if (busy || (key.isBlank() && !provider.local)) return
         if (provider.custom && !provider.baseUrl.startsWith("http")) { error = "Enter the service's address first."; return }
         busy = true
         scope.launch {
@@ -232,7 +232,7 @@ private fun AddServiceDialog(initial: Provider?, exclude: Set<String>, onDismiss
                 } else ProviderKeyFields(provider, { provider = it; error = null }, key, { key = it; error = null }, error, !busy, ::save, exclude)
             }
         },
-        confirmButton = { TextButton(::save, enabled = key.isNotBlank() && !busy) { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Text("Save") } },
+        confirmButton = { TextButton(::save, enabled = (key.isNotBlank() || (provider.local && initial == null)) && !busy) { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Text("Save") } },
         dismissButton = { TextButton(onDismiss, enabled = !busy) { Text("Cancel") } },
     )
 }

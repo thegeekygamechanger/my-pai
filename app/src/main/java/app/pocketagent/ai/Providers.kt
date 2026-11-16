@@ -18,6 +18,8 @@ data class Provider(
     val keyHint: String = "",
     val blurb: String = "",
     val custom: Boolean = false,
+    /** Runs on the person's own computer or network (Ollama): no key is needed, and its address can be plain http. */
+    val local: Boolean = false,
 )
 
 object Providers {
@@ -38,6 +40,17 @@ object Providers {
         Provider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1", "openai", "https://build.nvidia.com", "nvapi-…", "Open models"),
         Provider("pollinations", "Pollinations", "https://gen.pollinations.ai/v1", "openai", "https://enter.pollinations.ai", "", "Open models, with pictures and video"),
         Provider("huggingface", "Hugging Face", "https://router.huggingface.co/v1", "openai", "https://huggingface.co/settings/tokens", "hf_…", "Open models"),
+    )
+
+    const val OLLAMA = "ollama"
+    const val OLLAMA_URL = "http://localhost:11434/v1"
+    /** What is kept in place of a key for a service that needs none. Ollama ignores it. */
+    const val NO_KEY = "ollama"
+
+    /** Ollama, at the address the person gives: their own computer, or another one on their network. */
+    fun ollama(baseUrl: String = OLLAMA_URL) = Provider(
+        id = OLLAMA, name = "Ollama", baseUrl = baseUrl.trim().trimEnd('/').ifEmpty { OLLAMA_URL }, kind = "openai",
+        keyUrl = "https://ollama.com/download", blurb = "Models that run on your own computer", custom = true, local = true,
     )
 
     fun vaultKey(providerId: String) = "key.$providerId"

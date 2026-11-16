@@ -24,7 +24,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyPAI"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
         tools:targetApi="36">
 

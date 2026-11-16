@@ -1,7 +1,7 @@
 My PAI is a free, open-source AI app. Add your own API key and chat, or hand over a piece of work and let it get on with it. There are no ads, no subscription and no account: your key talks to the AI service directly.
 
 <b>Your own keys</b>
-Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek and other OpenAI-compatible services. On Auto, each message goes to the model that suits it: the quick one for small questions, the strongest for hard ones.
+Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek and other OpenAI-compatible services. Ollama too, for models that run on your own computer with no key. On Auto, each message goes to the model that suits it: the quick one for small questions, the strongest for hard ones.
 
 <b>Chat</b>
 Clear answers with web search, images and PDFs. You see the answer, not a wall of steps.

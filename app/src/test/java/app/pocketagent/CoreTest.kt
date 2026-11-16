@@ -238,6 +238,12 @@ class CoreTest {
             buildJsonObject { put("role", "user"); put("content", parseArray("""[{"type":"tool_result","tool_use_id":"toolu_1","content":"hello"}]""")) },
         )
         val body = OpenAiCompat.build(oaCfg(agent = true), history, tools(), emptySet()) { byteArrayOf(1, 2, 3) }
+        // A model that takes no tools is sent the same conversation without them.
+        assertTrue(body["tools"] != null)
+        assertNull(OpenAiCompat.build(oaCfg(agent = true), history, tools(), setOf(Feature.TOOLS)) { byteArrayOf(1, 2, 3) }["tools"])
+        // Ollama is a service like the others, at an address of the person's own, with no key to ask for.
+        assertTrue(Providers.ollama().local && Providers.ollama().baseUrl == "http://localhost:11434/v1")
+        assertEquals("http://192.168.1.20:11434/v1", Providers.ollama(" http://192.168.1.20:11434/v1/ ").baseUrl)
         val m = body.arr("messages")!!.map { it as JsonObject }
         assertEquals(listOf("system", "user", "assistant", "tool"), m.map { it.str("role") })
         val parts = m[1].arr("content")!!.map { it as JsonObject }

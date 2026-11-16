@@ -1,0 +1,1 @@
+A cleaner first screen without suggested prompts; the + button wakes up once a chat has messages. New: Ollama, for models that run on your own computer with no key.

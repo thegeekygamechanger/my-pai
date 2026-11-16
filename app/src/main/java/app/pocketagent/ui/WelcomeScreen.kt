@@ -1,5 +1,10 @@
 package app.pocketagent.ui
 
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.draw.alpha
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -85,20 +90,43 @@ import kotlinx.coroutines.launch
 val ROLES = listOf("Student", "Developer", "Designer", "Writer", "Founder", "Researcher", "Teacher", "Other")
 val STYLES = listOf("short" to "Short", "balanced" to "Balanced", "detailed" to "Detailed")
 
-/** A row of rounded choices; the chosen one fills with colour. */
+/**
+ * A row of rounded choices; the chosen one fills with colour. When there are more than fit, the row scrolls; on a
+ * computer, where there is no finger to drag it, an arrow at each end moves it along.
+ */
 @Composable
 fun Choices(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (value, label) ->
-            val on = value == selected
-            val bg by animateColorAsState(if (on) cs.primary else cs.surfaceContainerHigh, label = "choice")
-            val fg by animateColorAsState(if (on) cs.onPrimary else cs.onSurface, label = "choiceText")
-            val size by animateFloatAsState(if (on) 1.04f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "choiceScale")
-            Surface(onClick = { onSelect(value) }, shape = CircleShape, color = bg, contentColor = fg, modifier = Modifier.scale(size)) {
-                Text(label, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val arrows = LocalGraph.current.platform.isDesktop && scroll.maxValue > 0
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        @Composable
+        fun arrow(back: Boolean) {
+            val can = if (back) scroll.canScrollBackward else scroll.canScrollForward
+            Surface(
+                onClick = { scope.launch { scroll.animateScrollBy(if (back) -260f else 260f, spring(dampingRatio = 0.9f, stiffness = 380f)) } },
+                enabled = can, shape = CircleShape, color = cs.surfaceContainerHigh, contentColor = cs.onSurface,
+                modifier = Modifier.padding(if (back) PaddingValues(end = 8.dp) else PaddingValues(start = 8.dp)).size(34.dp).alpha(if (can) 1f else 0.35f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(if (back) Icons.AutoMirrored.Rounded.KeyboardArrowLeft else Icons.AutoMirrored.Rounded.KeyboardArrowRight, if (back) "Show earlier choices" else "Show more choices", Modifier.size(20.dp))
+                }
             }
         }
+        if (arrows) arrow(back = true)
+        Row(Modifier.weight(1f, fill = false).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (value, label) ->
+                val on = value == selected
+                val bg by animateColorAsState(if (on) cs.primary else cs.surfaceContainerHigh, label = "choice")
+                val fg by animateColorAsState(if (on) cs.onPrimary else cs.onSurface, label = "choiceText")
+                val size by animateFloatAsState(if (on) 1.04f else 1f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "choiceScale")
+                Surface(onClick = { onSelect(value) }, shape = CircleShape, color = bg, contentColor = fg, modifier = Modifier.scale(size)) {
+                    Text(label, Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
+        }
+        if (arrows) arrow(back = false)
     }
 }
 
@@ -109,12 +137,29 @@ fun ProviderKeyFields(provider: Provider, onProvider: (Provider) -> Unit, key: S
     var show by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
     var customUrl by remember { mutableStateOf("") }
-    val isCustom = provider.custom
+    var ollamaUrl by remember { mutableStateOf(if (provider.local) provider.baseUrl else Providers.OLLAMA_URL) }
+    val isLocal = provider.local
+    val isCustom = provider.custom && !isLocal
     Choices(
-        Providers.PRESETS.filter { it.id !in exclude }.map { it.id to it.name } + ("custom" to "Custom"),
-        if (isCustom) "custom" else provider.id,
-        { id -> onProvider(if (id == "custom") Providers.custom(customName, customUrl) else Providers.PRESETS.first { it.id == id }) },
+        Providers.PRESETS.filter { it.id !in exclude }.map { it.id to it.name } + listOfNotNull((Providers.OLLAMA to "Ollama").takeIf { Providers.OLLAMA !in exclude }) + ("custom" to "Custom"),
+        if (isLocal) Providers.OLLAMA else if (isCustom) "custom" else provider.id,
+        { id ->
+            onProvider(when (id) {
+                "custom" -> Providers.custom(customName, customUrl)
+                Providers.OLLAMA -> Providers.ollama(ollamaUrl)
+                else -> Providers.PRESETS.first { it.id == id }
+            })
+        },
     )
+    // Ollama runs on the person's own computer: all it needs is where to find it.
+    AnimatedVisibility(isLocal) {
+        OutlinedTextField(
+            ollamaUrl, { ollamaUrl = it.trim(); onProvider(Providers.ollama(ollamaUrl)) }, Modifier.fillMaxWidth().padding(top = 12.dp),
+            label = { Text("Ollama address") }, placeholder = { Text(Providers.OLLAMA_URL) }, singleLine = true, enabled = enabled, shape = MaterialTheme.shapes.large,
+            supportingText = { Text(if (LocalGraph.current.platform.isDesktop) "Where Ollama listens. On this computer that is the address already filled in." else "Ollama runs on a computer. Enter that computer's address on your Wi-Fi, for example http://192.168.1.20:11434/v1, and start Ollama there with OLLAMA_HOST=0.0.0.0 so the phone can reach it.") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+        )
+    }
     AnimatedVisibility(isCustom) {
         Column {
             OutlinedTextField(
@@ -132,8 +177,8 @@ fun ProviderKeyFields(provider: Provider, onProvider: (Provider) -> Unit, key: S
     OutlinedTextField(
         value = key, onValueChange = { onKey(it.trim()) },
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        label = { Text(if (isCustom) "API key" else "${provider.name} API key") },
-        placeholder = { if (provider.keyHint.isNotEmpty()) Text(provider.keyHint) },
+        label = { Text(if (isLocal) "API key (leave empty)" else if (isCustom) "API key" else "${provider.name} API key") },
+        placeholder = { if (isLocal) Text("Not needed for Ollama on your own computer") else if (provider.keyHint.isNotEmpty()) Text(provider.keyHint) },
         singleLine = true, enabled = enabled, isError = error != null,
         supportingText = { if (error != null) Text(error) },
         trailingIcon = { IconButton({ show = !show }) { Icon(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (show) "Hide key" else "Show key") } },
@@ -142,7 +187,7 @@ fun ProviderKeyFields(provider: Provider, onProvider: (Provider) -> Unit, key: S
         keyboardActions = KeyboardActions(onDone = { onDone() }),
         shape = MaterialTheme.shapes.large,
     )
-    if (provider.keyUrl.isNotEmpty()) TextButton({ runCatching { uri.openUri(provider.keyUrl) } }) { Text("Get a ${provider.name} key") }
+    if (provider.keyUrl.isNotEmpty()) TextButton({ runCatching { uri.openUri(provider.keyUrl) } }) { Text(if (isLocal) "Get Ollama" else "Get a ${provider.name} key") }
 }
 
 @Composable
@@ -182,7 +227,7 @@ fun WelcomeScreen(onDone: () -> Unit) {
     var beat by remember { mutableIntStateOf(0) }
 
     fun start() {
-        if (busy || ok || key.isBlank()) return
+        if (busy || ok || (key.isBlank() && !provider.local)) return
         if (provider.custom && !provider.baseUrl.startsWith("http")) { error = "Enter the service's address first."; return }
         busy = true; error = null
         scope.launch {
@@ -241,7 +286,7 @@ fun WelcomeScreen(onDone: () -> Unit) {
             }
 
             Section(2, "") {
-                Button(::start, Modifier.fillMaxWidth().height(56.dp), enabled = key.isNotBlank() && !busy && !ok, shape = MaterialTheme.shapes.large) {
+                Button(::start, Modifier.fillMaxWidth().height(56.dp), enabled = (key.isNotBlank() || provider.local) && !busy && !ok, shape = MaterialTheme.shapes.large) {
                     AnimatedContent(if (ok) 2 else if (busy) 1 else 0, label = "btn") { st ->
                         when (st) {
                             1 -> LoadingIndicator(Modifier.size(32.dp), color = cs.onPrimary)

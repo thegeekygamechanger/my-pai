@@ -162,18 +162,23 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
      * @return a message to show when the key is refused, or null when it is saved
      */
     suspend fun connect(provider: Provider, rawKey: String): String? {
-        val key = rawKey.trim()
-        if (key.length < 8 || key.any { it.isWhitespace() }) return "That does not look like an API key."
+        // A service on the person's own computer needs no key; a word stands in for one so the rest of the app has something to send.
+        val key = rawKey.trim().ifEmpty { if (provider.local) Providers.NO_KEY else "" }
+        if (!provider.local && (key.length < 8 || key.any { it.isWhitespace() })) return "That does not look like an API key."
+        if (provider.local && !provider.baseUrl.startsWith("http")) return "Enter the address ${provider.name} listens on, starting with http://"
         val models = try {
             fetchModels(provider, key)
         } catch (e: ApiException) {
+            if (provider.local) return "Could not reach ${provider.name} at ${provider.baseUrl}. Check that it is running (ollama serve) and that the address is right."
             // A wrong key is refused outright. Any other answer (some services have no model list) is not the key's fault.
             if (e.kind == ApiException.Kind.AUTH || e.kind == ApiException.Kind.PERMISSION || e.kind == ApiException.Kind.NETWORK || provider.kind == "anthropic") return e.friendly
             emptyList()
         } catch (e: Exception) {
             return "Could not check the key. Try again."
         }
-        if (provider.custom) settingsStore.update { s -> if (s.customProviders.any { it.id == provider.id }) s else s.copy(customProviders = s.customProviders + provider) }
+        if (provider.local && models.isEmpty()) return "${provider.name} answered, but it has no models yet. Download one first, for example: ollama pull llama3.2"
+        // Kept with its address. Connecting again under the same name replaces the address it had.
+        if (provider.custom) settingsStore.update { s -> s.copy(customProviders = s.customProviders.filter { it.id != provider.id } + provider) }
         vault.write(Providers.vaultKey(provider.id), key)
         saveModels(provider, models)
         settingsStore.update { s ->

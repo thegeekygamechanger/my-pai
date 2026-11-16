@@ -95,6 +95,8 @@ class RunManager(
     private val assemblers = ConcurrentHashMap<Long, LiveReply>()
     /** Optional request extras the service has rejected; left off for the rest of this app session. */
     private val disabled: MutableSet<Feature> = Collections.synchronizedSet(LinkedHashSet())
+    /** Models ("service/model") that answered that they take no tools. */
+    private val noTools: MutableSet<String> = Collections.synchronizedSet(LinkedHashSet())
 
     fun isRunning(chatId: Long) = jobs.containsKey(chatId)
 
@@ -290,7 +292,9 @@ class RunManager(
         var attempt = 0
         var stripped = false
         while (true) {
-            val off = disabled.toSet()
+            // A model that turned tools down once is not offered them again.
+            val toolsKey = cfg.provider.id + "/" + cfg.model
+            val off = if (toolsKey in noTools) disabled.toSet() + Feature.TOOLS else disabled.toSet()
             val key = host.key(cfg.provider.id) ?: throw ApiException(ApiException.Kind.NO_KEY, "No API key is set for ${cfg.provider.name}. Add one in Settings.")
             val anthropic = cfg.provider.kind == "anthropic"
             // Events can arrive faster than a screen can draw. The newest state is published at most every
@@ -325,6 +329,12 @@ class RunManager(
                 if (msg.container.isNotEmpty()) containers[chatId] = msg.container
                 return msg
             } catch (e: ApiException) {
+                // "This model does not support tools": the same request goes again without them, as a plain conversation.
+                if (!anthropic && toolsKey !in noTools && Feature.TOOLS.hints.any { e.message.orEmpty().lowercase().contains(it) }) {
+                    noTools += toolsKey; assemblers.remove(chatId)
+                    if (cfg.agent) note(chatId, "info", "This model cannot use tools, so it will answer here without files, memory or connected accounts.")
+                    continue
+                }
                 if (e.kind == ApiException.Kind.BAD_REQUEST) {
                     val rejected = RequestBuilder.rejectedFeature(e.message.orEmpty(), sentFeatures(cfg, off))
                     if (rejected != null) { disabled += rejected; assemblers.remove(chatId); continue }

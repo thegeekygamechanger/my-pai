@@ -13,7 +13,7 @@ plugins {
 }
 
 // Keep in step with versionName in app/build.gradle.kts.
-val appVersion = "1.0.0"
+val appVersion = "1.0.1"
 
 // Android-only files: each has a counterpart in this module under a different file name, or is not needed here.
 val androidOnly = listOf(

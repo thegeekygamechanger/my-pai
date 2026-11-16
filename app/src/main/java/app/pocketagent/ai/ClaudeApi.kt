@@ -22,6 +22,8 @@ import kotlin.coroutines.coroutineContext
  */
 class ClaudeApi(private val baseUrl: () -> String) {
     private val http = OkHttpClient.Builder()
+        // Never carried from an https address to a plain http one, key and all.
+        .followSslRedirects(false)
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         // A hard problem can think for minutes between events; the service sends pings in between.

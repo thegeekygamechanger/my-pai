@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HTTPS only, and only certificate authorities that ship with Android: a certificate the user
-     (or a network admin) installed on the phone is not trusted, so traffic cannot be read that way. -->
+<!-- Only certificate authorities that ship with Android are trusted: a certificate the user (or a network admin)
+     installed on the phone is not, so encrypted traffic cannot be read that way.
+     Plain http is allowed because Ollama, which runs on the person's own computer, is reached at an http address on
+     their own network. Every built-in service has an https address fixed in the app, and the app does not follow a
+     redirect from https to http, so a key for one of those services never travels unencrypted. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

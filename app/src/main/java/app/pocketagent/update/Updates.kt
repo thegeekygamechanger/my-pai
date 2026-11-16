@@ -41,7 +41,7 @@ interface Updates {
         const val PAGE = "https://github.com/$REPO/releases/latest"
         /** How often the app looks for a newer version by itself. One small request, so it can afford to be often. */
         const val AUTO_CHECK_MS = 30 * 60_000L
-        val http: OkHttpClient by lazy { OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
+        val http: OkHttpClient by lazy { OkHttpClient.Builder().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
 
         /** True when version [candidate] is newer than [current] ("1.10.0" beats "1.9.3"). */
         fun isNewer(candidate: String, current: String): Boolean {

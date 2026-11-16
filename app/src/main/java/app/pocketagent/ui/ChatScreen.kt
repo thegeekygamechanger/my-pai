@@ -412,8 +412,12 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                 }
                 // Hand the whole conversation to someone else with a short code. There is nothing to hand over until something has been said.
                 IconButton({ sharing = true }, enabled = messages.isNotEmpty()) { Icon(Icons.Rounded.Share, "Share this chat with a code", Modifier.size(21.dp)) }
-                // New chat sits alone in the top corner.
-                Surface(onClick = onNew, shape = CircleShape, color = cs.surface.copy(alpha = 0.35f), border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.12f)), modifier = Modifier.padding(start = 2.dp, end = 8.dp).size(44.dp)) {
+                // New chat sits alone in the top corner. It wakes up once something has been said here: an empty chat is already a new one.
+                val canStartNew = messages.isNotEmpty() || run != null
+                Surface(
+                    onClick = onNew, enabled = canStartNew, shape = CircleShape, color = cs.surface.copy(alpha = 0.35f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.12f)), modifier = Modifier.padding(start = 2.dp, end = 8.dp).size(44.dp).alpha(if (canStartNew) 1f else 0.38f),
+                ) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "New chat") }
                 }
             }
@@ -424,7 +428,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             // Messages. On a wide window the column is kept to a comfortable reading width.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {
-                    if (rows.isEmpty() && chat != null) EmptyChat(chatId, chat!!.agent) { input = it; send() }
+                    if (rows.isEmpty() && chat != null) EmptyChat(chatId, chat!!.agent)
                     else LazyColumn(
                         Modifier.fillMaxSize().nestedScroll(readingBack),
                         state = listState, reverseLayout = true, contentPadding = PaddingValues(top = 8.dp, bottom = 10.dp),
@@ -563,7 +567,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
 
 /** An empty chat: a greeting that changes with the hour, the weather and the person's name, over slowly moving colour. */
 @Composable
-private fun EmptyChat(chatId: Long, work: Boolean, onPick: (String) -> Unit) {
+private fun EmptyChat(chatId: Long, work: Boolean) {
     val g = LocalGraph.current
     val cs = MaterialTheme.colorScheme
     val settings by g.settings.collectAsState()
@@ -579,13 +583,6 @@ private fun EmptyChat(chatId: Long, work: Boolean, onPick: (String) -> Unit) {
             }
             AnimatedContent(line, transitionSpec = { fadeIn(tween(600, delayMillis = 120)) togetherWith fadeOut(tween(200)) }, label = "greetingLine") { l ->
                 Text(l, Modifier.padding(top = 12.dp).widthIn(max = 380.dp), style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
-            }
-            val ideas = if (work) listOf("Research today's top technology news and save a summary as notes.md", "Plan a 3-day trip to Jaipur and write the itinerary to a file", "Draft a README for a to-do list app in the workspace")
-            else listOf("Explain how a rainbow forms, simply", "Help me write a polite message to reschedule a meeting", "Give me a 7-day plan to start learning Python")
-            Column(Modifier.padding(top = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                ideas.forEach { idea ->
-                    SuggestionChip({ onPick(idea) }, { Text(idea, Modifier.padding(vertical = 6.dp), maxLines = 2, overflow = TextOverflow.Ellipsis) }, Modifier.widthIn(max = 420.dp), colors = androidx.compose.material3.SuggestionChipDefaults.suggestionChipColors(containerColor = cs.surface.copy(alpha = 0.6f)))
-                }
             }
         }
     }
