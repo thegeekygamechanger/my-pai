@@ -1,0 +1,1 @@
+Settings sections now slide up as a sheet over the list instead of opening a separate page.

@@ -106,12 +106,10 @@ private val LocalOpen = staticCompositionLocalOf<MutableState<String>> { error("
 
 /**
  * A labelled group of settings rows: a small heading, then the rows as joined tiles inside one rounded shape.
- * While one section is open as a page of its own, the group steps aside and only that section is drawn.
  */
 @Composable
 private fun Group(label: String, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
-    if (LocalOpen.current.value.isNotEmpty()) { Column(content = content); return }
     Text(label.uppercase(), Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp), color = cs.onSurfaceVariant)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
 }
@@ -121,7 +119,6 @@ private fun Group(label: String, content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun LinkRow(title: String, icon: ImageVector, summary: String = "", onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    if (LocalOpen.current.value.isNotEmpty()) return
     Surface(onClick = onClick, shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
@@ -140,7 +137,6 @@ private fun LinkRow(title: String, icon: ImageVector, summary: String = "", onCl
 @Composable
 private fun Tile(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
-    if (LocalOpen.current.value.isNotEmpty()) return
     Surface(shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -154,15 +150,13 @@ private fun Tile(title: String, icon: ImageVector, content: @Composable ColumnSc
 
 /**
  * One section of Settings. In the list it is a row: icon, name, a line saying how it is set, and an arrow.
- * Tapping it opens the section as a page of its own, where its controls are.
+ * Tapping it slides the section's controls up in a sheet over the list; the list stays where it was underneath.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun Card(title: String, icon: ImageVector, summary: String = "", content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
     val open = LocalOpen.current
-    if (open.value == title) { Column(Modifier.fillMaxWidth().padding(top = 8.dp), content = content); return }
-    if (open.value.isNotEmpty()) return
     Surface(onClick = { open.value = title }, shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
@@ -173,6 +167,22 @@ private fun Card(title: String, icon: ImageVector, summary: String = "", content
                 if (summary.isNotEmpty()) Text(summary, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open $title", tint = cs.onSurfaceVariant)
+        }
+    }
+    if (open.value == title) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { open.value = "" },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
+                Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                        Icon(icon, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
+                    }
+                    Text(title, Modifier.padding(start = 14.dp), style = MaterialTheme.typography.headlineSmall)
+                }
+                content()
+            }
         }
     }
 }
@@ -251,16 +261,10 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
     val askNotifications = g.platform.rememberNotificationAsk()
 
     val open = rememberSaveable { mutableStateOf("") }
-    // Back from a section's page returns to the list first; from the list it leaves Settings.
-    OnBack(open.value.isNotEmpty()) { open.value = "" }
     Column(Modifier.fillMaxSize().background(cs.surface).statusBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalIconButton({ if (open.value.isNotEmpty()) open.value = "" else onBack() }) {
-                Icon(if (wide && open.value.isEmpty()) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (open.value.isNotEmpty()) "Back to Settings" else if (wide) "Close" else "Back")
-            }
-            AnimatedContent(open.value.ifEmpty { "Settings" }, Modifier.padding(start = 12.dp), transitionSpec = { (fadeIn(spring(stiffness = 500f)) + slideInHorizontally(spring(dampingRatio = 0.8f, stiffness = 420f)) { it / 6 }) togetherWith fadeOut(spring(stiffness = 700f)) }, label = "title") { t ->
-                Text(t, style = MaterialTheme.typography.headlineMedium)
-            }
+            FilledTonalIconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
+            Text("Settings", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.headlineMedium)
         }
         CompositionLocalProvider(LocalOpen provides open) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
@@ -405,7 +409,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                     LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
                     LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
                 }
-                if (open.value.isEmpty()) Text("Pocket Agent ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
+                Text("Pocket Agent ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
             }
         } }
     }
