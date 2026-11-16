@@ -49,10 +49,6 @@ def shot(name, alt):
 INDEX = f'''<section class="hero">
   <h1>AI that gets on with it.</h1>
   <p>Chat, or hand over a piece of work. Your own keys, on every device.</p>
-  <div class="buttons">
-    <a class="btn primary" href="{REPO}/releases/latest">Download</a>
-    <a class="btn" href="{REPO}">View source</a>
-  </div>
   <div class="switch" role="tablist" aria-label="Show the app on">
     <span class="thumb"></span>
     <button role="tab" data-show="desktop">Desktop</button>
