@@ -71,6 +71,7 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun provider(id: String): Provider? = this@Graph.provider(id)
         override fun key(providerId: String): String? = keyFor(providerId)
         override fun modelInfo(id: String): ModelInfo? = allModels().firstOrNull { it.id == id }
+        override fun models(providerId: String): List<ModelInfo> = this@Graph.models(providerId)
         override fun attachment(path: String): ByteArray? = attach.file(path).takeIf { it.isFile }?.readBytes()
         override fun runsChanged(active: Boolean) = platform.runsChanged(active)
         override fun finished(chat: Chat, replyPreview: String, failed: Boolean) {
@@ -179,7 +180,7 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         val on = connected()
         val provider = on.firstOrNull { it.id == s.provider } ?: on.firstOrNull() ?: Providers.PRESETS.first()
         val list = models(provider.id)
-        val model = s.model.takeIf { id -> provider.id == s.provider && (list.isEmpty() || list.any { it.id == id }) } ?: list.firstOrNull { it.id == ModelCaps.DEFAULT_MODEL }?.id ?: list.firstOrNull()?.id ?: s.model
+        val model = app.pocketagent.ai.AutoModel.ID.takeIf { !s.modelChosen || s.model == it } ?: s.model.takeIf { id -> provider.id == s.provider && (list.isEmpty() || list.any { it.id == id }) } ?: list.firstOrNull { it.id == ModelCaps.DEFAULT_MODEL }?.id ?: list.firstOrNull()?.id ?: s.model
         val now = System.currentTimeMillis()
         return dao.insert(Chat(createdAt = now, updatedAt = now, agent = agent, provider = provider.id, model = model, effort = s.effort, web = s.web, permission = s.permission))
     }

@@ -59,6 +59,8 @@ interface RunHost {
     fun provider(id: String): Provider?
     fun key(providerId: String): String?
     fun modelInfo(id: String): ModelInfo?
+    /** The models of a service, for choosing one when the chat is set to Auto. */
+    fun models(providerId: String): List<ModelInfo> = emptyList()
     fun attachment(path: String): ByteArray?
     fun runsChanged(active: Boolean)
     fun finished(chat: Chat, replyPreview: String, failed: Boolean)
@@ -185,10 +187,19 @@ class RunManager(
             repairDangling(chatId, "Interrupted before this ran.")
             val s = host.settings()
             val provider = host.provider(chat.provider) ?: throw ApiException(ApiException.Kind.NO_KEY, "The service this chat used is no longer set up. Pick another model.")
-            val cap = host.modelInfo(chat.model)?.maxOutput?.takeIf { it > 0 }?.toInt() ?: if (ModelCaps.adaptive(chat.model)) 128_000 else 8_192
+            // A chat set to Auto gets its model now, from what was just asked; it then stays the same for the whole run.
+            val model = if (chat.model != AutoModel.ID) chat.model else {
+                val history = dao.messages(chatId)
+                val asked = history.lastOrNull { it.role == "user" && !blobs.unpack(it.content).contains("\"tool_result\"") }?.let { parseArray(blobs.unpack(it.content)).mapNotNull { b -> b as? JsonObject } }.orEmpty()
+                AutoModel.pick(
+                    host.models(provider.id), asked.filter { it.str("type") == "text" }.joinToString("\n") { it.str("text").orEmpty() }, chat.agent,
+                    asked.count { it.str("type") != "text" }, history.lastOrNull { it.role == "assistant" && it.model.isNotEmpty() }?.model,
+                ) ?: throw ApiException(ApiException.Kind.NO_KEY, "This service has no model list to choose from. Pick a model for this chat.")
+            }
+            val cap = host.modelInfo(model)?.maxOutput?.takeIf { it > 0 }?.toInt() ?: if (ModelCaps.adaptive(model)) 128_000 else 8_192
             val server = Providers.serverTools(provider)
             val cfg = RunConfig(
-                provider = provider, model = chat.model, effort = chat.effort, maxTokens = minOf(s.maxOutput, cap), customInstructions = s.instructions(),
+                provider = provider, model = model, effort = chat.effort, maxTokens = minOf(s.maxOutput, cap), customInstructions = s.instructions(),
                 agent = chat.agent, web = chat.web && server, code = chat.code && server, memory = chat.memory, fast = chat.fast && server,
                 fallbacks = s.fallbacks, compaction = s.compaction,
             )

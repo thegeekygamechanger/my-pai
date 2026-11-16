@@ -166,6 +166,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val wide = LocalWide.current
     val s = g.settings.collectAsState().value ?: return
+    // Until the person picks a model themselves, new chats use Auto.
+    val auto = !s.modelChosen || s.model == app.pocketagent.ai.AutoModel.ID
+    val defaultModel = if (auto) app.pocketagent.ai.AutoModel.NAME else g.models(s.provider).firstOrNull { it.id == s.model }?.name ?: s.model
     val totals by remember { g.dao.totals() }.collectAsState(null)
     fun set(change: (Settings) -> Settings) { scope.launch { g.settingsStore.update(change) } }
     fun shared(change: (Settings) -> Settings) { scope.launch { g.updateShared(change) } }
@@ -223,11 +226,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                     FilledTonalButton({ adding = true }, Modifier.padding(vertical = 6.dp)) { Text("Add a service") }
                 }
 
-                Card("New chats", Icons.Rounded.AutoAwesome, g.models(s.provider).firstOrNull { it.id == s.model }?.name ?: s.model) {
+                Card("New chats", Icons.Rounded.AutoAwesome, defaultModel) {
                     Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { pickModel = true }.padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Model", style = MaterialTheme.typography.bodyLarge)
-                            Text((g.models(s.provider).firstOrNull { it.id == s.model }?.name ?: s.model) + (g.provider(s.provider)?.let { " · ${it.name}" } ?: ""), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                            Text(defaultModel + (g.provider(s.provider)?.let { " · ${it.name}" } ?: ""), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                         }
                         Text("Change", style = MaterialTheme.typography.labelLarge, color = cs.primary)
                     }
@@ -318,7 +321,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         } }
     }
 
-    if (pickModel) ModelPicker(s.provider, s.model, onPick = { p, m -> pickModel = false; shared { it.copy(provider = p, model = m) } }, onDismiss = { pickModel = false })
+    if (pickModel) ModelPicker(s.provider, if (auto) app.pocketagent.ai.AutoModel.ID else s.model, onPick = { p, m -> pickModel = false; shared { it.copy(provider = p, model = m, modelChosen = true) } }, onDismiss = { pickModel = false })
     if (adding) AddServiceDialog(null, connected.map { it.id }.toSet()) { adding = false }
     replacing?.let { p -> AddServiceDialog(p, emptySet()) { replacing = null } }
     removing?.let { p ->

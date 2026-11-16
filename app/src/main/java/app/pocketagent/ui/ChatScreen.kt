@@ -342,11 +342,12 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         // An empty chat sits on slowly moving colour that follows the hour and the weather; it fades away once the conversation starts.
         val weatherNow by g.weather.collectAsState()
         val hourNow = remember(chatId) { java.time.LocalTime.now().hour }
-        // Full colour and a slow drift on an empty chat. Once the conversation starts the colour drops back so text stays
-        // easy to read; it stands still while nothing is happening and flows while a reply is being written.
+        // Full colour and a slow drift on an empty chat. Once the conversation starts it drifts more slowly still,
+        // and flows while a reply is being written.
         val started = rows.isNotEmpty()
-        val glow by animateFloatAsState(if (!started) 1f else if (run != null) 0.62f else 0.4f, tween(900), label = "glow")
-        if (chat != null) Backdrop(backdropColors(hourNow, weatherNow), Modifier.fillMaxSize(), speed = if (!started) 2.7f else if (run != null) 9f else 0f, strength = glow)
+        // The colours stay clearly in view once a chat is under way, in dark mode too; they are only a little calmer than on the first screen.
+        val glow by animateFloatAsState(if (!started) 1f else if (run != null) 0.9f else 0.78f, tween(900), label = "glow")
+        if (chat != null) Backdrop(backdropColors(hourNow, weatherNow), Modifier.fillMaxSize(), speed = if (!started) 2.7f else if (run != null) 9f else 1.4f, strength = glow)
         Column(Modifier.fillMaxSize().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -356,7 +357,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                     val c = chat
                     if (c != null) Text(
                         listOfNotNull(
-                            g.models(c.provider).firstOrNull { it.id == c.model }?.name?.removePrefix("Claude ") ?: shortModel(c.model).ifBlank { "Choose a model" },
+                            if (c.model == app.pocketagent.ai.AutoModel.ID) app.pocketagent.ai.AutoModel.NAME else g.models(c.provider).firstOrNull { it.id == c.model }?.name?.removePrefix("Claude ") ?: shortModel(c.model).ifBlank { "Choose a model" },
                             c.effort.takeIf { g.provider(c.provider)?.let { p -> Providers.efforts(p, c.model).isNotEmpty() } == true },
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,

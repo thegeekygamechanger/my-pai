@@ -17,6 +17,10 @@ def page(title, body, desc, script=''):
 <meta name="description" content="{desc}">
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="style.css">
+<script>
+// The colours behind the page follow the hour, as they do in the app.
+(function () {{ var h = new Date().getHours(); document.documentElement.dataset.phase = h >= 5 && h <= 11 ? 'morning' : h >= 12 && h <= 16 ? 'day' : h >= 17 && h <= 20 ? 'evening' : 'night'; }})();
+</script>
 </head>
 <body data-device="desktop">
 <div class="wrap">

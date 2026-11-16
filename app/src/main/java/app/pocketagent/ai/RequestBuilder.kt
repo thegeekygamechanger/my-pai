@@ -74,7 +74,8 @@ object RequestBuilder {
      */
     fun fingerprint(cfg: RunConfig, clientTools: Tools?): String {
         val names = tools(cfg, clientTools, emptySet()).map { (it as JsonObject).toString() }.sorted()
-        val digest = MessageDigest.getInstance("SHA-256").digest((system(cfg) + "\u0000" + names.joinToString("\u0000")).toByteArray())
+        // The model is part of it: reasoning written by one model is not handed to another.
+        val digest = MessageDigest.getInstance("SHA-256").digest((cfg.model + "\u0000" + system(cfg) + "\u0000" + names.joinToString("\u0000")).toByteArray())
         return digest.take(12).joinToString("") { "%02x".format(it) }
     }
 

@@ -63,3 +63,19 @@ article p { margin: 0 0 12px; }
   nav a:not(.pill) { display:none; }
   .hero { padding-top: 44px; }
 }
+
+/* The same slowly moving colour as the app: three soft patches on a long circuit, tinted by the hour. */
+:root { --g1:#7DBBFF; --g2:#8FEBDB; --g3:#C8B4FF; --glow:.42; }
+html[data-phase="morning"] { --g1:#FFB98A; --g2:#9CCBFF; --g3:#FFE08A; }
+html[data-phase="evening"] { --g1:#FF9E80; --g2:#C98BFF; --g3:#FFC978; }
+html[data-phase="night"] { --g1:#5B63D6; --g2:#7A3FB8; --g3:#1E6FA8; }
+@media (prefers-color-scheme: dark) { :root { --glow:.30; } }
+html::before, body::before, body::after {
+  content:""; position:fixed; z-index:-1; pointer-events:none; left:50%; top:34%; width:110vmax; height:110vmax; margin:-55vmax 0 0 -55vmax; border-radius:50%;
+  opacity:var(--glow); background: radial-gradient(closest-side, var(--g1), transparent); animation: orbit 26s linear infinite; will-change: transform;
+}
+body::before { background: radial-gradient(closest-side, var(--g2), transparent); animation-delay:-8.7s; }
+body::after { background: radial-gradient(closest-side, var(--g3), transparent); animation-delay:-17.3s; }
+@keyframes orbit { from { transform: rotate(0deg) translate(34vw, 6vh) rotate(0deg); } to { transform: rotate(360deg) translate(34vw, 6vh) rotate(-360deg); } }
+@media (prefers-reduced-motion: reduce) { html::before, body::before, body::after { animation: none; } html::before { transform: translate(-30vw, 0); } body::after { transform: translate(30vw, 10vh); } }
+.switch, .grid > div { backdrop-filter: blur(8px); }

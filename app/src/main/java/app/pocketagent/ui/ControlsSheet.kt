@@ -35,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import app.pocketagent.ai.AutoModel
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -97,6 +99,21 @@ fun ModelPicker(provider: String, model: String, onPick: (String, String) -> Uni
                 placeholder = { Text("Search ${all.size} models") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
             )
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Auto comes first: the app picks the service's quick, everyday or strongest model for each message.
+                if (query.isBlank() && all.isNotEmpty()) item(key = "auto") {
+                    val sel = model == AutoModel.ID && current == provider
+                    val bg by animateColorAsState(if (sel) cs.primaryContainer else cs.surfaceContainerHigh, label = "auto")
+                    Surface(onClick = { onPick(current, AutoModel.ID) }, shape = MaterialTheme.shapes.large, color = bg, modifier = Modifier.fillMaxWidth().animateItem()) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.padding(end = 12.dp).size(22.dp), tint = if (sel) cs.onPrimaryContainer else cs.primary)
+                            Column(Modifier.weight(1f)) {
+                                Text(AutoModel.NAME, style = MaterialTheme.typography.titleMedium, color = if (sel) cs.onPrimaryContainer else cs.onSurface)
+                                Text("Picks the right model for each message", style = MaterialTheme.typography.bodySmall, color = (if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant).copy(alpha = 0.85f))
+                            }
+                            if (sel) Icon(Icons.Rounded.CheckCircle, "Selected", Modifier.size(22.dp), tint = cs.primary)
+                        }
+                    }
+                }
                 items(shown, key = { it.id }) { m ->
                     val sel = m.id == model && current == provider
                     val bg by animateColorAsState(if (sel) cs.primaryContainer else cs.surfaceContainerHigh, label = "model")
@@ -151,7 +168,7 @@ fun ControlsSheet(chat: Chat, onDismiss: () -> Unit) {
             Surface(onClick = { picking = true }, shape = MaterialTheme.shapes.large, color = cs.primaryContainer, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(g.models(chat.provider).firstOrNull { it.id == chat.model }?.name?.ifBlank { null } ?: chat.model.ifBlank { "Choose a model" }, style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (chat.model == AutoModel.ID) AutoModel.NAME else g.models(chat.provider).firstOrNull { it.id == chat.model }?.name?.ifBlank { null } ?: chat.model.ifBlank { "Choose a model" }, style = MaterialTheme.typography.titleMedium, color = cs.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(provider?.name ?: "Service not set up", style = MaterialTheme.typography.bodySmall, color = cs.onPrimaryContainer.copy(alpha = 0.8f))
                     }
                     Text("Change", style = MaterialTheme.typography.labelLarge, color = cs.primary)

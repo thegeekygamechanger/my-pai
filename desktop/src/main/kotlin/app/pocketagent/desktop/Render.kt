@@ -11,7 +11,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import app.pocketagent.ui.AppRoot
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
@@ -25,7 +25,10 @@ import java.io.File
  */
 @OptIn(ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 fun main(args: Array<String>) {
-    runBlocking(Dispatchers.Default) {
+    // One thread plays the part of the interface thread, as in the real app: effects started while a frame is
+    // being drawn wait their turn instead of running in the middle of it.
+    val ui = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "render-ui").apply { isDaemon = true } }.asCoroutineDispatcher()
+    runBlocking(ui) {
         val data = File(args.getOrElse(0) { "build/render-data" }).apply { mkdirs() }
         val out = File(args.getOrElse(1) { "build/render" }).apply { mkdirs() }
         val platform = DesktopPlatform(data)
@@ -33,7 +36,7 @@ fun main(args: Array<String>) {
         graph.start()
         val host = DesktopHost(graph)
         val (width, height, scale) = System.getProperty("render.size", "1600x1000x1").split('x').let { Triple(it[0].toInt(), it[1].toInt(), it.getOrElse(2) { "1" }.toFloat()) }
-        val scene = ImageComposeScene(width, height, Density(scale)) { Box(Modifier.fillMaxSize()) { AppRoot(host) } }
+        val scene = ImageComposeScene(width, height, Density(scale), coroutineContext = ui) { Box(Modifier.fillMaxSize()) { AppRoot(host) } }
         var clock = 0L
         suspend fun settle(ms: Long) { val end = clock + ms; while (clock < end) { scene.render(clock * 1_000_000); clock += 32; delay(8) } }
         fun shot(name: String) {

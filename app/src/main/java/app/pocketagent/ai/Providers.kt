@@ -49,6 +49,8 @@ object Providers {
 
     /** Whether the reasoning-effort control does anything for this model. */
     fun efforts(provider: Provider, model: String): List<String> = when {
+        // On Auto the model is not known yet; the setting is offered where any model of the service may use it, and fitted to the model when it is chosen.
+        model == AutoModel.ID -> if (provider.kind == "anthropic" || provider.id == "openai" || provider.id == "openrouter") listOf("low", "medium", "high") else emptyList()
         provider.kind == "anthropic" -> ModelCaps.efforts(model)
         provider.id == "openai" && (model.startsWith("o") && model.getOrNull(1)?.isDigit() == true || model.startsWith("gpt-5")) -> listOf("low", "medium", "high")
         provider.id == "openrouter" -> listOf("low", "medium", "high")
