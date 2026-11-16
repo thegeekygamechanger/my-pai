@@ -11,9 +11,16 @@
 //   GET  /v1/r/<room>/s?d=<device>   a long-lived event stream of what the others send
 //   POST /v1/r/<room>/p?d=<device>   one message for the others (opaque bytes)
 //   GET  /healthz
+//   POST /v1/feedback                a note from a person to the developer (see below)
 //
 // Settings (environment): PORT (8790), HOST (127.0.0.1), MAX_ROOM (5 devices), MAX_BODY (262144 bytes),
 // MAX_ROOMS (20000), MAX_PER_IP (40 open streams from one address).
+//
+// Feedback is off unless it is configured. When it is, a note written in the app's Settings is handed to an
+// email service (Brevo) and goes to the developer's mailbox. Nothing of it is kept or logged here, and the
+// mailbox address exists only in this process's environment: it is in no reply and in no app.
+//   BREVO_API_KEY, FEEDBACK_TO (the mailbox), FEEDBACK_FROM (a verified sender address), FEEDBACK_FROM_NAME,
+//   FEEDBACK_PER_IP (3 notes an hour from one address), FEEDBACK_PER_DAY (60 notes a day in all).
 
 import http from 'node:http';
 
@@ -28,6 +35,17 @@ const MAX_BACKLOG = 12 * 1024 * 1024;
 // Per room: at most this many bytes and posts in any 10 seconds.
 const RATE_BYTES = 24 * 1024 * 1024;
 const RATE_POSTS = 600;
+
+const FEEDBACK_KEY = process.env.BREVO_API_KEY || '';
+const FEEDBACK_TO = process.env.FEEDBACK_TO || '';
+const FEEDBACK_FROM = process.env.FEEDBACK_FROM || '';
+const FEEDBACK_FROM_NAME = process.env.FEEDBACK_FROM_NAME || 'Pocket Agent';
+const FEEDBACK_PER_IP = Number(process.env.FEEDBACK_PER_IP || 3);
+const FEEDBACK_PER_DAY = Number(process.env.FEEDBACK_PER_DAY || 60);
+const FEEDBACK_URL = process.env.FEEDBACK_URL || 'https://api.brevo.com/v3/smtp/email';
+/** address -> {t, n}: notes from one address in the current hour. Emptied as the hours pass. */
+const notesByIp = new Map();
+let notesToday = { day: '', n: 0 };
 
 /** room -> Map(device -> {res, ip}) */
 const rooms = new Map();
@@ -125,10 +143,64 @@ function post(req, res, room, device) {
   req.on('error', () => {});
 }
 
+const EMAIL = /^[^\s@<>"',;]{1,64}@[A-Za-z0-9.-]{1,180}\.[A-Za-z]{2,24}$/;
+
+/** One note from a person to the developer. It is read, handed to the email service, and forgotten. */
+function feedback(req, res) {
+  if (!FEEDBACK_KEY || !FEEDBACK_TO || !FEEDBACK_FROM) return reply(res, 503, { error: 'off' });
+  const ip = ipOf(req);
+  const now = Date.now();
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (notesToday.day !== day) notesToday = { day, n: 0 };
+  let mine = notesByIp.get(ip);
+  if (!mine || now - mine.t > 3600000) mine = { t: now, n: 0 };
+  if (mine.n >= FEEDBACK_PER_IP || notesToday.n >= FEEDBACK_PER_DAY) return reply(res, 429, { error: 'too many' });
+  const chunks = [];
+  let size = 0;
+  let refused = false;
+  req.on('data', (c) => {
+    if (refused) return;
+    size += c.length;
+    if (size > 24 * 1024) { refused = true; reply(res, 413, { error: 'too large' }); req.destroy(); return; }
+    chunks.push(c);
+  });
+  req.on('end', async () => {
+    if (refused) return;
+    let note;
+    try { note = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(res, 400, { error: 'bad request' }); }
+    const message = typeof note?.message === 'string' ? note.message.trim() : '';
+    const email = typeof note?.email === 'string' ? note.email.trim() : '';
+    const app = typeof note?.app === 'string' ? note.app.replace(/[^A-Za-z0-9 .+_-]/g, '').slice(0, 60) : '';
+    if (message.length < 3 || message.length > 4000 || (email && !EMAIL.test(email))) return reply(res, 400, { error: 'bad request' });
+    // Counted before it is sent, so a burst cannot get past the limit while the first note is on its way.
+    mine.n++; notesByIp.set(ip, mine); notesToday.n++;
+    try {
+      const sent = await fetch(FEEDBACK_URL, {
+        method: 'POST',
+        headers: { 'api-key': FEEDBACK_KEY, 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({
+          sender: { email: FEEDBACK_FROM, name: FEEDBACK_FROM_NAME },
+          to: [{ email: FEEDBACK_TO }],
+          ...(email ? { replyTo: { email } } : {}),
+          subject: `Pocket Agent feedback${app ? ` (${app})` : ''}`,
+          textContent: `${message}\n\n--\nReply to: ${email || 'no address given'}\nApp: ${app || 'unknown'}`,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!sent.ok) return reply(res, 502, { error: 'not sent' });
+      return reply(res, 200, { ok: true });
+    } catch {
+      try { reply(res, 502, { error: 'not sent' }); } catch { /* the connection is gone */ }
+    }
+  });
+  req.on('error', () => {});
+}
+
 const server = http.createServer((req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/healthz') return reply(res, 200, { ok: true, rooms: rooms.size });
+    if (url.pathname === '/healthz') return reply(res, 200, { ok: true, rooms: rooms.size, feedback: Boolean(FEEDBACK_KEY && FEEDBACK_TO && FEEDBACK_FROM) });
+    if (url.pathname === '/v1/feedback') return req.method === 'POST' ? feedback(req, res) : reply(res, 405, { error: 'method' });
     const m = /^\/v1\/r\/([^/]+)\/(s|p)$/.exec(url.pathname);
     const device = url.searchParams.get('d') || '';
     if (!m || !ROOM.test(m[1]) || !DEVICE.test(device)) return reply(res, 404, { error: 'not found' });
@@ -144,6 +216,12 @@ const server = http.createServer((req, res) => {
 setInterval(() => {
   for (const members of rooms.values()) for (const m of members.values()) m.res.write(': hb\n\n');
 }, 20000).unref();
+
+// Forget who sent a note once their hour is over.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, n] of notesByIp) if (now - n.t > 3600000) notesByIp.delete(ip);
+}, 600000).unref();
 
 server.headersTimeout = 20000;
 server.requestTimeout = 0;

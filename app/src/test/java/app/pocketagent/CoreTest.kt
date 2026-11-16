@@ -413,6 +413,9 @@ class CoreTest {
         assertEquals("cnt_1", body.str("container"))
         assertTrue(body.toString().contains("code_execution"))
         assertTrue(RequestBuilder.system(work).contains("OUTPUT_DIR"))
+        // It can say who made the app and which model is answering, because it is told both.
+        assertTrue(RequestBuilder.system(work).contains("developed by Harsh Kumar, a senior software engineer"))
+        assertTrue(RequestBuilder.system(work).contains("Claude Opus 5.5, made by Anthropic"))
         // A plain chat has no sandbox, so it is told nothing about one and sends no container.
         val (chat, _) = RequestBuilder.build(cfg(), listOf(user("hi")), tools(), emptySet(), "cnt_1") { null }
         assertEquals(null, chat["container"])
@@ -430,5 +433,44 @@ class CoreTest {
         // The container the reply ran in is read from the stream.
         val a = asm("""{"type":"message_start","message":{"id":"m1","model":"x","container":{"id":"cnt_9"},"usage":{"input_tokens":1}}}""", """{"type":"message_stop"}""")
         assertEquals("cnt_9", a.toMessage().container)
+    }
+
+    // ---- feedback
+
+    @Test fun feedbackGoesToTheRelayAndNowhereElse() = kotlinx.coroutines.runBlocking {
+        val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
+        var on = true
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { ex ->
+            val body = ex.requestBody.readBytes().decodeToString()
+            seen += ex.requestMethod + " " + ex.requestURI.path + " " + body
+            val (code, text) = when {
+                ex.requestURI.path == "/healthz" -> 200 to """{"ok":true,"rooms":0,"feedback":$on}"""
+                body.contains("flood") -> 429 to """{"error":"too many"}"""
+                body.contains("broken") -> 502 to """{"error":"not sent"}"""
+                else -> 200 to """{"ok":true}"""
+            }
+            val out = text.toByteArray()
+            ex.sendResponseHeaders(code, out.size.toLong()); ex.responseBody.use { it.write(out) }
+        }
+        server.start()
+        try {
+            val relay = "http://127.0.0.1:${server.address.port}"
+            assertTrue(app.pocketagent.sync.Feedback.available(relay))
+            on = false
+            assertFalse(app.pocketagent.sync.Feedback.available(relay))
+            assertEquals(app.pocketagent.sync.Feedback.Result.SENT, app.pocketagent.sync.Feedback.send("  It works well.  ", " sam@example.org ", "android 1.1.8", relay))
+            // Exactly what was written, the address for a reply and the version; nothing else is in the request.
+            assertEquals("""POST /v1/feedback {"message":"It works well.","email":"sam@example.org","app":"android 1.1.8"}""", seen.last())
+            assertEquals(app.pocketagent.sync.Feedback.Result.SENT, app.pocketagent.sync.Feedback.send("No address", "", "desktop 1.1.8", relay))
+            assertFalse(seen.last().contains("email"))
+            assertEquals(app.pocketagent.sync.Feedback.Result.TOO_MANY, app.pocketagent.sync.Feedback.send("flood", "", "x", relay))
+            assertEquals(app.pocketagent.sync.Feedback.Result.FAILED, app.pocketagent.sync.Feedback.send("broken", "", "x", relay))
+            assertEquals(app.pocketagent.sync.Feedback.Result.FAILED, app.pocketagent.sync.Feedback.send("nobody home", "", "x", "http://127.0.0.1:1"))
+            assertTrue(app.pocketagent.sync.Feedback.validEmail("a.b+c@mail.example.in"))
+            assertFalse(app.pocketagent.sync.Feedback.validEmail("not an email"))
+        } finally {
+            server.stop(0)
+        }
     }
 }

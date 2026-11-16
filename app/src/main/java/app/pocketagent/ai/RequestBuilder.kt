@@ -65,10 +65,21 @@ object RequestBuilder {
             "Never say a file was made, saved, converted or sent, or that a step succeeded, unless a tool result shows it. " +
             "If something truly cannot be done here, say so in one line with the reason, and offer the nearest thing you can do instead."
 
+    /** The model and who makes it, in words a person would use: "Claude Haiku 5.5, made by Anthropic". */
+    private fun modelCredit(cfg: RunConfig): String {
+        if (cfg.provider.kind != "anthropic") return "${cfg.model}, reached through ${cfg.provider.name}"
+        val parts = cfg.model.removePrefix("claude-").split('-').filter { it.length < 8 }
+        val family = parts.firstOrNull()?.replaceFirstChar { it.uppercase() } ?: return "${cfg.model}, made by Anthropic"
+        return ("Claude $family " + parts.drop(1).joinToString(".")).trim() + ", made by Anthropic"
+    }
+
     /** @param today the date the model is told; it has no clock of its own, and "today" or "latest" means nothing without one */
     fun system(cfg: RunConfig, today: java.time.LocalDate = java.time.LocalDate.now()): String {
         val extra = cfg.customInstructions.trim()
-        val base = BASE_SYSTEM + (if (cfg.agent && cfg.code && ModelCaps.adaptive(cfg.model)) "\n\n" + SANDBOX else "") + "\n\n" + DIRECT + "\n\nToday is " + today.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH)) + "."
+        // Who made the app and which model is answering: people ask, and the model would otherwise guess at both.
+        val made = "Pocket Agent was developed by Harsh Kumar, a senior software engineer. The AI model writing these replies is ${modelCredit(cfg)}. " +
+            "If the person asks who made, built, created or developed you or this app, tell them both things: who developed the app, and which AI model and company are behind the answers. Do not bring it up otherwise."
+        val base = BASE_SYSTEM + "\n\n" + made + (if (cfg.agent && cfg.code && ModelCaps.adaptive(cfg.model)) "\n\n" + SANDBOX else "") + "\n\n" + DIRECT + "\n\nToday is " + today.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.ENGLISH)) + "."
         return if (extra.isEmpty()) base else "$base\n\nThe person's standing instructions:\n$extra"
     }
 

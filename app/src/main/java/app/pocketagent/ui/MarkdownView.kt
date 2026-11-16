@@ -96,13 +96,14 @@ fun inlineText(text: String, limit: Int = -1): AnnotatedString {
         if (cut in 1 until built.length && Character.isHighSurrogate(built[cut - 1])) cut--
         buildAnnotatedString {
             append(built.subSequence(0, cut))
-            // Behind the edge the words are at full strength; across it they fade in.
-            val steps = 8
-            val per = WRITE_EDGE / steps
-            for (k in 0 until steps) {
-                val end = (edge - k * per).coerceIn(0, length)
-                val start = (edge - (k + 1) * per).coerceIn(0, length)
-                if (end > start) addStyle(SpanStyle(color = base.copy(alpha = base.alpha * (k + 0.5f) / steps)), start, end)
+            // Behind the edge the words are at full strength; across it they come in gradually, two characters at a
+            // time, on a curve that is gentle at both ends, so the front of the text looks soft rather than cut.
+            var end = cut
+            while (end > 0 && edge - end < WRITE_EDGE) {
+                val start = maxOf(0, end - 2)
+                val t = ((edge - end + 1f) / WRITE_EDGE).coerceIn(0f, 1f)
+                addStyle(SpanStyle(color = base.copy(alpha = base.alpha * t * t * (3f - 2f * t))), start, end)
+                end = start
             }
         }
     }

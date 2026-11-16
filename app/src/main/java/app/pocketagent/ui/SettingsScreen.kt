@@ -68,6 +68,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialShapes
@@ -82,6 +84,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.ui.Modifier
@@ -405,6 +408,9 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         }
                         if (note.isNotEmpty()) Text(note, Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
+                    // Offered only while the relay can pass a note on, so the button never leads nowhere.
+                    val feedbackOn by androidx.compose.runtime.produceState(false) { value = app.pocketagent.sync.Feedback.available() }
+                    if (feedbackOn) Card("Send feedback", Icons.Rounded.RateReview, "Tell the developer what works and what does not") { FeedbackForm() }
                     LinkRow(Docs.title(Docs.TERMS), Icons.Rounded.Gavel) { onDoc(Docs.TERMS) }
                     LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
                     LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
@@ -441,4 +447,72 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
         confirmButton = { TextButton({ wiping = false; scope.launch { g.deleteEverything(); note = "All chats and files deleted." } }) { Text("Delete everything", color = cs.error) } },
         dismissButton = { TextButton({ wiping = false }) { Text("Cancel") } },
     )
+}
+
+/**
+ * A note to the developer, written and sent without leaving the app. Where it goes is not shown, and the app does
+ * not know it: the note is handed to the relay, which passes it on by email.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun FeedbackForm() {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    var message by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var sent by rememberSaveable { mutableStateOf(false) }
+    var problem by remember { mutableStateOf("") }
+
+    if (sent) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(72.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, null, Modifier.size(30.dp), tint = cs.onPrimaryContainer)
+            }
+            Text("Thank you, it is sent", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (email.isBlank()) "Your note is on its way to the developer. You left no address, so there will be no reply; send another with your email if you would like one."
+                else "Your note is on its way to the developer. Please allow a few hours for a reply at ${email.trim()}.",
+                Modifier.padding(top = 6.dp, start = 8.dp, end = 8.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            TextButton({ sent = false; message = ""; problem = "" }, Modifier.padding(top = 8.dp)) { Text("Write another") }
+        }
+        return
+    }
+
+    Text("What works, what does not, what you wish it did. It goes straight to the developer.", Modifier.padding(start = 4.dp, bottom = 10.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    OutlinedTextField(
+        message, { message = it.take(app.pocketagent.sync.Feedback.MAX); problem = "" }, Modifier.fillMaxWidth().heightIn(min = 132.dp), enabled = !sending,
+        placeholder = { Text("Your feedback") }, shape = RoundedCornerShape(20.dp), keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+    )
+    val emailOk = email.isBlank() || app.pocketagent.sync.Feedback.validEmail(email)
+    OutlinedTextField(
+        email, { email = it.take(120).trim(); problem = "" }, Modifier.fillMaxWidth().padding(top = 10.dp), enabled = !sending, singleLine = true, isError = !emailOk,
+        placeholder = { Text("Your email, for a reply (optional)") }, shape = androidx.compose.foundation.shape.CircleShape,
+        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
+    )
+    Text(
+        problem.ifEmpty { "Sent with it: this text, the email if you give one, and the app version (${g.platform.versionName}). Nothing from your chats or files." },
+        Modifier.padding(start = 4.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = if (problem.isEmpty()) cs.onSurfaceVariant else cs.error,
+    )
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (sending) androidx.compose.material3.LoadingIndicator(Modifier.size(32.dp))
+        Spacer(Modifier.weight(1f))
+        androidx.compose.material3.Button(
+            {
+                sending = true; problem = ""
+                scope.launch {
+                    val where = (if (g.platform.isDesktop) "desktop " else "android ") + g.platform.versionName
+                    when (app.pocketagent.sync.Feedback.send(message, email, where)) {
+                        app.pocketagent.sync.Feedback.Result.SENT -> sent = true
+                        app.pocketagent.sync.Feedback.Result.TOO_MANY -> problem = "That is several notes in a short while. Please try again in an hour."
+                        app.pocketagent.sync.Feedback.Result.FAILED -> problem = "It could not be sent. Check the connection and try again."
+                    }
+                    sending = false
+                }
+            },
+            enabled = !sending && message.trim().length >= 3 && emailOk,
+        ) { Text(if (sending) "Sending" else "Send") }
+    }
 }

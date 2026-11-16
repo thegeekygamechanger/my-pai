@@ -24,6 +24,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
@@ -46,6 +47,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -180,7 +182,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: () -> Unit, onWorkspace: () -> Unit, onDeleted: () -> Unit, onOpenChat: (Long) -> Unit = {}) {
     val g = LocalGraph.current
@@ -233,7 +235,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             last = now
             val behind = sizeNow - written
             // Close behind, it writes steadily; far behind (a long reply that landed whole), it writes faster, and never lags for long.
-            if (behind > 0f) written = minOf(sizeNow.toFloat(), written + dt * (behind * 3f).coerceIn(220f, 4000f))
+            if (behind > 0f) written = minOf(sizeNow.toFloat(), written + dt * (behind * 2.4f).coerceIn(170f, 2600f))
             // A new message, or a reply being written again: the turn starts over.
             else if (behind < 0f) written = sizeNow.toFloat()
             else if (!running) { writing = false; break }
@@ -247,6 +249,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     val shownRows = held0 ?: writtenRows
     val latestRows by rememberUpdatedState(rows)
     val reversed = remember(shownRows) { shownRows.asReversed() }
+    val turnFrom = remember(shownRows) { shownRows.indexOfLast { it is UiRow.User } }
 
     val listState = rememberLazyListState()
     val atBottom by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 80 } }
@@ -279,9 +282,6 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     val picked = remember(chatId) { mutableStateListOf<Picked>() }
     var editing by remember { mutableStateOf<UiRow.User?>(null) }
     var showControls by remember { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     // Connected accounts the person has pulled into this message with "@".
@@ -388,28 +388,30 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             // Top bar
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
-                Column(Modifier.weight(1f).padding(start = if (onMenu == null) 14.dp else 0.dp).clip(MaterialTheme.shapes.small).clickable { showControls = true }.padding(horizontal = 6.dp, vertical = 4.dp)) {
+                // The name of the chat, and under it the model that answers. A tap or a long press on it opens the model and tools.
+                Column(
+                    Modifier.weight(1f).padding(start = if (onMenu == null) 14.dp else 0.dp).clip(MaterialTheme.shapes.small)
+                        .combinedClickable(onClickLabel = "Model and tools", onLongClick = { buzz(); showControls = true }) { showControls = true }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                ) {
                     Text(chat?.title?.ifBlank { "New chat" } ?: "", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val c = chat
-                    if (c != null) Text(
-                        listOfNotNull(
-                            if (c.model == app.pocketagent.ai.AutoModel.ID) app.pocketagent.ai.AutoModel.NAME else g.models(c.provider).firstOrNull { it.id == c.model }?.name?.removePrefix("Claude ") ?: shortModel(c.model).ifBlank { "Choose a model" },
-                            c.effort.takeIf { g.provider(c.provider)?.let { p -> Providers.efforts(p, c.model).isNotEmpty() } == true },
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                // The three dots hold everything about this chat, starting with its model.
-                Box {
-                    IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Chat options") }
-                    DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem({ Text("Model and tools") }, { menu = false; showControls = true }, leadingIcon = { Icon(Icons.Rounded.Tune, null) })
-                        DropdownMenuItem({ Text("Rename") }, { menu = false; renaming = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
-                        // There is nothing to hand over until something has been said.
-                        DropdownMenuItem({ Text("Share with a code") }, { menu = false; sharing = true }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) }, enabled = messages.isNotEmpty())
-                        DropdownMenuItem({ Text("Delete chat") }, { menu = false; deleting = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
+                    if (c != null) {
+                        fun named(id: String) = g.models(c.provider).firstOrNull { it.id == id }?.name?.removePrefix("Claude ") ?: shortModel(id)
+                        // On Auto, the model that wrote the last reply; before there is one, just "Auto".
+                        val used = if (c.model == app.pocketagent.ai.AutoModel.ID) messages.lastOrNull { it.role == "assistant" && it.model.isNotEmpty() }?.model else null
+                        Text(
+                            when {
+                                used != null -> named(used)
+                                c.model == app.pocketagent.ai.AutoModel.ID -> app.pocketagent.ai.AutoModel.NAME
+                                else -> named(c.model).ifBlank { "Choose a model" }
+                            },
+                            style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
+                // Hand the whole conversation to someone else with a short code. There is nothing to hand over until something has been said.
+                IconButton({ sharing = true }, enabled = messages.isNotEmpty()) { Icon(Icons.Rounded.Share, "Share this chat with a code", Modifier.size(21.dp)) }
                 // New chat sits alone in the top corner.
                 Surface(onClick = onNew, shape = CircleShape, color = cs.surface.copy(alpha = 0.35f), border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.12f)), modifier = Modifier.padding(start = 2.dp, end = 8.dp).size(44.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "New chat") }
@@ -427,10 +429,12 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         Modifier.fillMaxSize().nestedScroll(readingBack),
                         state = listState, reverseLayout = true, contentPadding = PaddingValues(top = 8.dp, bottom = 10.dp),
                     ) {
-                        items(reversed, key = { it.key }, contentType = { it::class }) { row ->
-                            // New rows fade in. They are not slid into place: while a reply is growing every row above it
-                            // moves on each frame, and animating that makes the text lag and overlap.
-                            val m = if (row is UiRow.Md && row.live) Modifier else Modifier.animateItem(fadeInSpec = spring(stiffness = 300f), placementSpec = null, fadeOutSpec = null)
+                        itemsIndexed(reversed, key = { _, it -> it.key }, contentType = { _, it -> it::class }) { i, row ->
+                            // Parts of the reply that is arriving open out as they appear. They are not slid into place: while a
+                            // reply is growing every row above it moves on each frame, and animating that makes the text lag and overlap.
+                            val arriving = (writing || run != null) && reversed.size - 1 - i > turnFrom
+                            val spread = Modifier.spreadIn(arriving)
+                            val m = if (row is UiRow.Md && row.live) spread else spread.animateItem(fadeInSpec = if (arriving) null else spring(stiffness = 300f), placementSpec = null, fadeOutSpec = null)
                             when (row) {
                                 is UiRow.User -> UserRow(row, m, onCopy = { clipboard.setText(AnnotatedString(it)); buzz() }, onEdit = { editing = it; input = it.text }, canEdit = run == null)
                                 is UiRow.Md -> MdRow(row, m)
@@ -555,23 +559,6 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         mentions += Mention("GitHub", repos)
     }
 
-    if (renaming) {
-        var name by remember { mutableStateOf(chat?.title.orEmpty()) }
-        AlertDialog(
-            onDismissRequest = { renaming = false },
-            title = { Text("Rename chat") },
-            text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)) },
-            confirmButton = { TextButton({ renaming = false; scope.launch { g.dao.rename(chatId, name.trim().ifEmpty { "New chat" }) } }) { Text("Save") } },
-            dismissButton = { TextButton({ renaming = false }) { Text("Cancel") } },
-        )
-    }
-    if (deleting) AlertDialog(
-        onDismissRequest = { deleting = false },
-        title = { Text("Delete this chat?") },
-        text = { Text("The messages and attachments in it are removed from this device and from linked devices. Files in the workspace stay.") },
-        confirmButton = { TextButton({ deleting = false; scope.launch { g.deleteChat(chatId); onDeleted() } }) { Text("Delete") } },
-        dismissButton = { TextButton({ deleting = false }) { Text("Cancel") } },
-    )
 }
 
 /** An empty chat: a greeting that changes with the hour, the weather and the person's name, over slowly moving colour. */
@@ -602,6 +589,34 @@ private fun EmptyChat(chatId: Long, work: Boolean, onPick: (String) -> Unit) {
             }
         }
     }
+}
+
+/** Short invitations for the empty message box: one to four words each, so they never wrap. */
+private val CHAT_HINTS = listOf(
+    "Ask me anything", "What's on your mind?", "Curious about something?", "Got a question?", "Think out loud", "Start with a thought",
+    "What shall we explore?", "Say anything", "Wonder away", "Ask away", "Spark an idea", "Your move", "What's the puzzle?",
+    "Dream something up", "Need a second opinion?", "Let's untangle it", "Name the topic", "Pick my brain", "Where to today?",
+    "Tell me a problem", "Something to figure out?", "Go on", "I'm listening", "What's new?",
+)
+private val WORK_HINTS = listOf(
+    "Hand me a task", "What needs doing?", "Give me a job", "Name the mission", "Drop a to-do", "What shall I build?",
+    "Put me to work", "Assign me something", "Next task, please", "What should I make?", "Convert, draft or fix?",
+    "Point me somewhere", "Let's get it done", "Queue something up", "Describe the result", "What's the brief?",
+)
+
+/** The words shown in the empty message box: a new line for every chat, changing every few seconds, never the same twice running. */
+@Composable
+private fun hint(work: Boolean, chatId: Long?): String {
+    val pool = if (work) WORK_HINTS else CHAT_HINTS
+    var words by remember(work, chatId) { mutableStateOf(pool.random()) }
+    val motion = LocalMotion.current
+    LaunchedEffect(work, chatId, motion) {
+        while (motion) {
+            delay(5200)
+            words = (pool - words).random()
+        }
+    }
+    return words
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -720,7 +735,10 @@ private fun Composer(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 decorationBox = { inner ->
                     Box {
-                        if (input.isEmpty()) Text(if (chat?.agent == true) "What should I work on?" else "Message", style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant.copy(alpha = 0.7f))
+                        // An empty box invites with a few words that keep changing, always on one line.
+                        if (input.isEmpty()) AnimatedContent(hint(chat?.agent == true, chat?.id), transitionSpec = { fadeIn(tween(520)) togetherWith fadeOut(tween(260)) }, label = "hint") { words ->
+                            Text(words, style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                        }
                         inner()
                     }
                 },
@@ -732,7 +750,7 @@ private fun Composer(
                 Segmented(
                     listOf(false to "Chat", true to "Work"), chat?.agent == true, { if (!running) onMode(it) }, Modifier.alpha(if (locked) 0.6f else 1f),
                     // On a narrow phone the words alone keep the row to one line.
-                    icons = if (roomy) mapOf(false to Icons.Rounded.ChatBubbleOutline, true to Icons.Rounded.AutoAwesome) else emptyMap(), fill = false,
+                    icons = if (roomy) mapOf(false to Icons.Rounded.ChatBubbleOutline, true to Icons.Rounded.AutoAwesome) else emptyMap(), fill = false, compact = true,
                 )
                 Spacer(Modifier.weight(1f))
                 if (speech != null && !running) {

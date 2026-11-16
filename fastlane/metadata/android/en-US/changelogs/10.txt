@@ -1,0 +1,1 @@
+Your chats are listed in the side menu with a long-press menu (pin, rename, share, delete). A share button sits beside + in every chat. The model shows under the chat's name. Replies spread in softly, and the message box shows a changing line.

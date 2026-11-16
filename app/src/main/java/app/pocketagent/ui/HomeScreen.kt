@@ -85,7 +85,7 @@ fun friendlyTime(ms: Long): String {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Unit, selected: Long?, inSheet: Boolean = false) {
+fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Unit, selected: Long?, inSheet: Boolean = false, onDeleted: (Long) -> Unit = {}) {
     val g = LocalGraph.current
     val wide = LocalWide.current
     var openShared by remember { mutableStateOf(false) }
@@ -97,8 +97,6 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     }.collectAsState(null)
     val runs by g.allRuns.collectAsState()
     val listState = rememberLazyListState()
-    var renaming by remember { mutableStateOf<Chat?>(null) }
-    var deleting by remember { mutableStateOf<Chat?>(null) }
     val visible = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
 
     // Inside the slide-up sheet it takes the sheet's own ground and needs no room for the status bar.
@@ -160,11 +158,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                                     }
                                 }
                             }
-                            DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem({ Text(if (chat.pinned) "Unpin" else "Pin to top") }, { menu = false; scope.launch { g.dao.pin(chat.id, !chat.pinned) } }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) })
-                                DropdownMenuItem({ Text("Rename") }, { menu = false; renaming = chat }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
-                                DropdownMenuItem({ Text("Delete") }, { menu = false; deleting = chat }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
-                            }
+                            ChatMenu(chat, menu, { menu = false }, onDeleted)
                         }
                     }
                 }
@@ -173,23 +167,4 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     }
 
     if (openShared) OpenSharedDialog({ openShared = false }) { id -> openShared = false; onOpen(id) }
-    renaming?.let { c ->
-        var name by remember(c.id) { mutableStateOf(c.title) }
-        AlertDialog(
-            onDismissRequest = { renaming = null },
-            title = { Text("Rename chat") },
-            text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true) },
-            confirmButton = { TextButton({ renaming = null; scope.launch { g.dao.rename(c.id, name.trim().ifEmpty { "New chat" }) } }) { Text("Save") } },
-            dismissButton = { TextButton({ renaming = null }) { Text("Cancel") } },
-        )
-    }
-    deleting?.let { c ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("Delete \"${c.title.take(40)}\"?") },
-            text = { Text("The messages and attachments in it are removed from this phone.") },
-            confirmButton = { TextButton({ deleting = null; scope.launch { g.deleteChat(c.id) } }) { Text("Delete") } },
-            dismissButton = { TextButton({ deleting = null }) { Text("Cancel") } },
-        )
-    }
 }

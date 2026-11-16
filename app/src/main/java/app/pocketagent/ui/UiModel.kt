@@ -59,8 +59,11 @@ fun MdBlock.chars(): Int = when (this) {
     MdBlock.Rule -> 0
 }
 
-/** Writing a reply out: every block lasts a little longer than its text, so its last words finish fading in before the next begins. */
-const val WRITE_EDGE = 16
+/**
+ * Writing a reply out: the words spread in across this many characters, from nothing at the front to full strength
+ * behind. Every block lasts this much longer than its text, so its last words finish before the next block begins.
+ */
+const val WRITE_EDGE = 44
 
 /** How much of the writing-out a row takes up. Text counts by its length; a step or a note is a short beat; the rest is free. */
 fun UiRow.weight(): Int = when (this) {

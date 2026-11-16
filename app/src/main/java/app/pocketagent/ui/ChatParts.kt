@@ -147,7 +147,7 @@ import kotlinx.coroutines.withContext
  * to the next one with a spring when the selection changes.
  */
 @Composable
-fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier, icons: Map<T, ImageVector> = emptyMap(), fill: Boolean = true) {
+fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier, icons: Map<T, ImageVector> = emptyMap(), fill: Boolean = true, compact: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val index = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
     val lefts = remember(options.size) { mutableStateListOf<Int>().apply { repeat(options.size) { add(0) } } }
@@ -182,14 +182,32 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
                         .onGloballyPositioned { c -> lefts[i] = c.positionInParent().x.roundToInt(); widths[i] = c.size.width }
                         .clip(CircleShape)
                         .selectable(selected = on, role = Role.Tab, onClick = { if (!on) onSelect(value) })
-                        .padding(horizontal = if (fill) 6.dp else 14.dp, vertical = 9.dp),
+                        .padding(horizontal = if (compact) 11.dp else if (fill) 6.dp else 14.dp, vertical = if (compact) 6.dp else 9.dp),
                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    icons[value]?.let { Icon(it, null, Modifier.padding(end = 6.dp).size(18.dp), tint = color) }
-                    Text(label, color = color, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                    icons[value]?.let { Icon(it, null, Modifier.padding(end = if (compact) 5.dp else 6.dp).size(if (compact) 15.dp else 18.dp), tint = color) }
+                    Text(label, color = color, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
+    }
+}
+
+/**
+ * A new part of a reply opens out from its top corner as it fades in, like ink spreading, instead of popping into
+ * place. Only parts that arrive while a reply is being written do this; a chat that is opened or scrolled does not.
+ */
+@Composable
+fun Modifier.spreadIn(on: Boolean): Modifier {
+    if (!on || !LocalMotion.current) return this
+    val p = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { p.animateTo(1f, spring(dampingRatio = 0.86f, stiffness = 170f)) }
+    return graphicsLayer {
+        alpha = p.value.coerceIn(0f, 1f)
+        val size = 0.9f + 0.1f * p.value
+        scaleX = size; scaleY = size
+        translationY = (1f - p.value) * 10.dp.toPx()
+        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
     }
 }
 
@@ -405,11 +423,6 @@ fun FooterRow(row: UiRow.Footer, modifier: Modifier, onCopy: (String) -> Unit, o
             }
         }
         if (row.last && !busy) IconButton(onRetry, Modifier.size(38.dp)) { Icon(Icons.Rounded.Refresh, "Try again", Modifier.size(18.dp), tint = cs.onSurfaceVariant) }
-        Spacer(Modifier.weight(1f))
-        Text(
-            shortModel(row.model),
-            style = MaterialTheme.typography.labelSmall, color = cs.outline, maxLines = 1,
-        )
     }
 }
 

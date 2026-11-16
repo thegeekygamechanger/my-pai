@@ -101,6 +101,22 @@ fun main(args: Array<String>) {
                 graph.updateShared { it }
                 settle(400)
             }
+            // "long:x,y" keeps the finger down for most of a second of real time; "right:x,y" is a click with the other mouse button.
+            s.startsWith("long:") -> s.removePrefix("long:").split(',').let {
+                val at = Offset(it[0].toFloat(), it[1].toFloat())
+                scene.sendPointerEvent(PointerEventType.Move, at); scene.sendPointerEvent(PointerEventType.Press, at)
+                val until = System.currentTimeMillis() + 900
+                while (System.currentTimeMillis() < until) { scene.render(clock * 1_000_000); clock += 32; delay(30) }
+                scene.sendPointerEvent(PointerEventType.Release, at); settle(900)
+            }
+            s.startsWith("right:") -> s.removePrefix("right:").split(',').let {
+                val at = Offset(it[0].toFloat(), it[1].toFloat())
+                val other = androidx.compose.ui.input.pointer.PointerButtons(isSecondaryPressed = true)
+                scene.sendPointerEvent(PointerEventType.Move, at)
+                scene.sendPointerEvent(PointerEventType.Press, at, buttons = other, button = androidx.compose.ui.input.pointer.PointerButton.Secondary)
+                settle(60)
+                scene.sendPointerEvent(PointerEventType.Release, at, button = androidx.compose.ui.input.pointer.PointerButton.Secondary); settle(900)
+            }
             s.contains(',') -> s.split(',').let { click(it[0].toFloat(), it[1].toFloat()) }
             else -> shot(s)
         }

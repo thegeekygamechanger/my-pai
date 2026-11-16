@@ -43,6 +43,8 @@ PORT=18790 node server/relay.mjs &
 
 To run your own relay, start `server/relay.mjs` (plain Node, no dependencies) behind HTTPS and build with `-Dpocketagent.relay=https://your.host` on the desktop, or change `SyncEngine.RELAY`.
 
+The same relay can pass on the notes people write under Settings, Send feedback. That is off unless the relay is given an email service key and a mailbox in its environment (`BREVO_API_KEY`, `FEEDBACK_TO`, `FEEDBACK_FROM`, described at the top of `server/relay.mjs`); the app only shows the form when the relay says it is on. A note is handed to the email service and forgotten, and the mailbox address is in no reply and in no build of the app.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for bundled fonts and libraries.

@@ -85,6 +85,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
@@ -200,7 +206,7 @@ private fun Nav(host: Host) {
                 sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
             ) {
                 Box(Modifier.fillMaxWidth().fillMaxHeight(0.86f)) {
-                    HistoryScreen(onOpen = { id -> historyOpen = false; openChat(id) }, onMenu = null, onNew = { historyOpen = false; newChat() }, selected = (current as? Screen.Chat)?.id, inSheet = true)
+                    HistoryScreen(onOpen = { id -> historyOpen = false; openChat(id) }, onMenu = null, onNew = { historyOpen = false; newChat() }, selected = (current as? Screen.Chat)?.id, inSheet = true, onDeleted = { id -> if ((current as? Screen.Chat)?.id == id) newChat() })
                 }
             }
             if (wide) {
@@ -208,23 +214,19 @@ private fun Nav(host: Host) {
                 Row(Modifier.fillMaxSize()) {
                     // The rail.
                     // Tapping the app's mark folds the rail away to just the mark, and opens it again.
-                    val railWidth by androidx.compose.animation.core.animateDpAsState(if (railOpen) 84.dp else 68.dp, spring(dampingRatio = 0.85f, stiffness = 380f), label = "rail")
-                    Column(Modifier.width(railWidth).fillMaxHeight().statusBarsPadding().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            Modifier.padding(bottom = 16.dp).size(44.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
-                                .clickable(onClickLabel = if (railOpen) "Collapse the side menu" else "Open the side menu") { railOpen = !railOpen; if (!railOpen) { historyOpen = false; aboutOpen = false } },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Rounded.AutoAwesome, if (railOpen) "Collapse the side menu" else "Open the side menu", Modifier.size(20.dp), tint = cs.onPrimaryContainer)
-                        }
-                        AnimatedVisibility(railOpen, Modifier.weight(1f), enter = fadeIn() + androidx.compose.animation.expandVertically(spring(dampingRatio = 0.85f, stiffness = 380f)), exit = fadeOut() + androidx.compose.animation.shrinkVertically(spring(stiffness = 500f))) {
-                            Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                NavItem(Icons.Rounded.History, "History", historyOpen) { historyOpen = true }
-                                NavItem(Icons.Rounded.FolderOpen, "Files", screen == Screen.Workspace) { if (screen == Screen.Workspace) backToChat() else go(Screen.Workspace) }
-                                NavItem(Icons.Rounded.Schedule, "Tasks", screen == Screen.Schedules) { if (screen == Screen.Schedules) backToChat() else go(Screen.Schedules) }
-                                Spacer(Modifier.weight(1f))
-                                NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings || screen is Screen.Doc) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
-                                Text("v" + g.platform.versionName, style = MaterialTheme.typography.labelSmall, color = cs.outline)
+                    val railWidth by androidx.compose.animation.core.animateDpAsState(if (railOpen) 288.dp else 68.dp, spring(dampingRatio = 0.85f, stiffness = 380f), label = "rail")
+                    Box(Modifier.width(railWidth).fillMaxHeight().clipToBounds()) {
+                        if (railOpen) SideMenu(
+                            screen = screen, selected = (screen as? Screen.Chat)?.id, onMark = { railOpen = false; aboutOpen = false },
+                            onNew = newChat, onOpen = openChat, onGo = { s -> if (screen == s) backToChat() else go(s) }, onSearch = { historyOpen = true },
+                            onDeleted = { id -> if ((current as? Screen.Chat)?.id == id) newChat() },
+                            modifier = Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(288.dp).fillMaxHeight().statusBarsPadding(),
+                        ) else Column(Modifier.width(68.dp).fillMaxHeight().statusBarsPadding().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(44.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer).clickable(onClickLabel = "Open the side menu") { railOpen = true },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Rounded.AutoAwesome, "Open the side menu", Modifier.size(20.dp), tint = cs.onPrimaryContainer)
                             }
                         }
                     }
@@ -260,31 +262,13 @@ private fun Nav(host: Host) {
                         ModalDrawerSheet(Modifier.width(300.dp), drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp), windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)) {
                           Box(Modifier.fillMaxSize()) {
                             AppBackdrop(Modifier.matchParentSize())
-                            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                            Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(40.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
-                                }
-                                Text("Pocket Agent", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge)
-                            }
-                            val item = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-                            NavigationDrawerItem({ Text("New chat") }, false, { scope.launch { drawer.close() }; newChat() }, item, icon = { Icon(Icons.Rounded.Add, null) })
-                            NavigationDrawerItem({ Text("History") }, historyOpen, { scope.launch { drawer.close() }; historyOpen = true }, item, icon = { Icon(Icons.Rounded.History, null) })
-                            NavigationDrawerItem({ Text("Workspace files") }, screen == Screen.Workspace, { pick(Screen.Workspace) }, item, icon = { Icon(Icons.Rounded.FolderOpen, null) })
-                            NavigationDrawerItem({ Text("Scheduled tasks") }, screen == Screen.Schedules, { pick(Screen.Schedules) }, item, icon = { Icon(Icons.Rounded.Schedule, null) })
-                            Spacer(Modifier.weight(1f))
-                            // The foot of the menu: the version on one side, Settings on the other. Terms, privacy and licences are inside Settings.
-                            Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 16.dp, top = 12.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Pocket Agent " + g.platform.versionName, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.outline)
-                                val inSettings = screen == Screen.Settings || screen is Screen.Doc
-                                androidx.compose.material3.Surface(onClick = { pick(Screen.Settings) }, shape = androidx.compose.foundation.shape.CircleShape, color = if (inSettings) cs.secondaryContainer else cs.surface.copy(alpha = 0.55f), contentColor = if (inSettings) cs.onSecondaryContainer else cs.onSurface) {
-                                    Row(Modifier.padding(start = 14.dp, end = 18.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Rounded.Settings, null, Modifier.size(20.dp))
-                                        Text("Settings", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
-                                    }
-                                }
-                            }
-                            }
+                            SideMenu(
+                                screen = screen, selected = (screen as? Screen.Chat)?.id, onMark = null,
+                                onNew = { scope.launch { drawer.close() }; newChat() }, onOpen = { id -> scope.launch { drawer.close() }; openChat(id) }, onGo = { s -> pick(s) },
+                                onSearch = { scope.launch { drawer.close() }; historyOpen = true },
+                                onDeleted = { id -> if ((current as? Screen.Chat)?.id == id) newChat() },
+                                modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+                            )
                           }
                         }
                     },
@@ -317,6 +301,93 @@ private fun Nav(host: Host) {
                             is Screen.Doc -> DocScreen(s.kind, onBack = { go(Screen.Settings) })
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The side menu, the same in the drawer of a phone and in the open side panel of a computer: the places to go, then,
+ * after a little air, the chats themselves, newest first and as many as there are. A long press or a right click on
+ * one opens the same menu it has in History.
+ * @param onMark what a tap on the app's mark does (folding the panel away on a computer); null where it does nothing
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun SideMenu(
+    screen: Screen, selected: Long?, onMark: (() -> Unit)?, onNew: () -> Unit, onOpen: (Long) -> Unit, onGo: (Screen) -> Unit,
+    onSearch: () -> Unit, onDeleted: (Long) -> Unit, modifier: Modifier = Modifier,
+) {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    val chats by remember { g.dao.chats() }.collectAsState(emptyList())
+    val runs by g.allRuns.collectAsState()
+    val listed = chats.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
+    Column(modifier) {
+        Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(40.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
+                    .then(if (onMark != null) Modifier.clickable(onClickLabel = "Collapse the side menu", onClick = onMark) else Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, if (onMark != null) "Collapse the side menu" else null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
+            }
+            Text("Pocket Agent", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1)
+        }
+        val item = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        NavigationDrawerItem({ Text("New chat") }, false, onNew, item, icon = { Icon(Icons.Rounded.Add, null) })
+        NavigationDrawerItem({ Text("Workspace files") }, screen == Screen.Workspace, { onGo(Screen.Workspace) }, item, icon = { Icon(Icons.Rounded.FolderOpen, null) })
+        NavigationDrawerItem({ Text("Scheduled tasks") }, screen == Screen.Schedules, { onGo(Screen.Schedules) }, item, icon = { Icon(Icons.Rounded.Schedule, null) })
+
+        // History: a quiet heading with search beside it, then every chat. The list takes the room that is left and scrolls.
+        Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 14.dp, top = 18.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("History", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
+            androidx.compose.material3.IconButton(onSearch, Modifier.size(36.dp)) { Icon(Icons.Rounded.Search, "Search chats", Modifier.size(19.dp), tint = cs.onSurfaceVariant) }
+        }
+        if (listed.isEmpty()) {
+            Text("Your chats will be listed here.", Modifier.padding(start = 28.dp, end = 20.dp, top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.outline)
+            Spacer(Modifier.weight(1f))
+        } else androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(listed.size, key = { listed[it].id }) { n ->
+                val chat = listed[n]
+                var menu by remember { mutableStateOf(false) }
+                val on = chat.id == selected
+                Box(Modifier.animateItem(fadeInSpec = spring(stiffness = 300f), placementSpec = spring(dampingRatio = 0.8f, stiffness = 350f))) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.CircleShape).background(if (on) cs.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                            .onSecondaryClick { menu = true }.combinedClickable(onLongClick = { menu = true }) { onOpen(chat.id) }
+                            .padding(start = 16.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val tint = if (on) cs.onSecondaryContainer else cs.onSurfaceVariant
+                        if (runs.containsKey(chat.id)) androidx.compose.material3.LoadingIndicator(Modifier.size(20.dp), color = cs.primary)
+                        else Icon(if (chat.agent) Icons.Rounded.AutoAwesome else Icons.Rounded.ChatBubbleOutline, null, Modifier.size(18.dp), tint = tint.copy(alpha = 0.8f))
+                        Text(
+                            chat.title.ifBlank { "New chat" }, Modifier.weight(1f).padding(start = 14.dp), style = MaterialTheme.typography.bodyMedium,
+                            color = if (on) cs.onSecondaryContainer else cs.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                        if (chat.pinned) Icon(Icons.Rounded.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(14.dp), tint = cs.primary)
+                    }
+                    ChatMenu(chat, menu, { menu = false }, onDeleted)
+                }
+            }
+        }
+
+        // The foot of the menu: the version on one side, Settings on the other. Terms, privacy and licences are inside Settings.
+        Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 16.dp, top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Pocket Agent " + g.platform.versionName, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.outline, maxLines = 1)
+            val inSettings = screen == Screen.Settings || screen is Screen.Doc
+            androidx.compose.material3.Surface(
+                onClick = { onGo(Screen.Settings) }, shape = androidx.compose.foundation.shape.CircleShape,
+                color = if (inSettings) cs.secondaryContainer else cs.surface.copy(alpha = 0.55f), contentColor = if (inSettings) cs.onSecondaryContainer else cs.onSurface,
+            ) {
+                Row(Modifier.padding(start = 14.dp, end = 18.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Settings, null, Modifier.size(20.dp))
+                    Text("Settings", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
