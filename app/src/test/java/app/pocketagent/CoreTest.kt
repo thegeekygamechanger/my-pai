@@ -23,7 +23,12 @@ import app.pocketagent.data.ToolError
 import app.pocketagent.data.Workspace
 import app.pocketagent.ui.Inline
 import app.pocketagent.ui.Markdown
+import app.pocketagent.ui.Item
 import app.pocketagent.ui.MdBlock
+import app.pocketagent.ui.UiRow
+import app.pocketagent.ui.WRITE_EDGE
+import app.pocketagent.ui.turnWeight
+import app.pocketagent.ui.writeOut
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -370,5 +375,60 @@ class CoreTest {
         assertTrue(s.none { it.italic && it.text.contains("3") })
         assertTrue(s.none { it.italic && it.text.contains("case") })
         assertEquals("a bold and it and code*x link https://a.b/c. 2 * 3 * 4 snake_case_name", s.joinToString("") { it.text })
+    }
+
+    // ---- writing a reply out
+
+    @Test fun aReplyIsWrittenOutBlockByBlockAndOlderTurnsAreLeftAlone() {
+        val old = UiRow.Md("a0:0:0", MdBlock.Para("An older answer."), false)
+        val rows = listOf(
+            UiRow.User("u1", 1, "first", emptyList()), old,
+            UiRow.User("u2", 2, "second", emptyList()),
+            UiRow.Md("a1:0:0", MdBlock.Para("0123456789"), false),
+            UiRow.Note("n1", "Saved to Files: a.pdf", false),
+            UiRow.Md("a1:0:1", MdBlock.Items(listOf(Item(0, "•", "one"), Item(0, "•", "two"))), false),
+            UiRow.Footer("f1", "x", "m", 1, true),
+        )
+        assertEquals(10 + WRITE_EDGE + 24 + 6 + WRITE_EDGE, turnWeight(rows))
+        // Nothing written yet: the question is there, the reply is not.
+        assertEquals(listOf("u1", "a0:0:0", "u2"), writeOut(rows, 0).map { it.key })
+        // Part of the first paragraph: it is cut there and nothing follows it.
+        val part = writeOut(rows, 4)
+        assertEquals(listOf("u1", "a0:0:0", "u2", "a1:0:0"), part.map { it.key })
+        assertEquals(4, (part.last() as UiRow.Md).upTo)
+        assertTrue((part.last() as UiRow.Md).live)
+        assertTrue(part[1] === old)
+        // The paragraph and its closing beat are done; the note waits for its own short beat.
+        assertEquals("a1:0:0", writeOut(rows, 10 + WRITE_EDGE).last().key)
+        assertEquals(-1, (writeOut(rows, 10 + WRITE_EDGE + 5).last() as UiRow.Md).upTo)
+        assertEquals("n1", writeOut(rows, 10 + WRITE_EDGE + 24).last().key)
+        // The footer comes only when every word is out.
+        assertEquals("a1:0:1", writeOut(rows, turnWeight(rows) - 1).last().key)
+        assertTrue(writeOut(rows, turnWeight(rows)) === rows)
+    }
+
+    @Test fun theSandboxIsOfferedForWorkAndItsContainerIsReused() {
+        val work = RunConfig(Providers.PRESETS.first(), "claude-opus-5-5", "high", 32000, "", agent = true, web = true, code = true, memory = true, fast = false, fallbacks = true, compaction = true)
+        val (body, _) = RequestBuilder.build(work, listOf(user("make a pdf")), tools(), emptySet(), "cnt_1") { null }
+        assertEquals("cnt_1", body.str("container"))
+        assertTrue(body.toString().contains("code_execution"))
+        assertTrue(RequestBuilder.system(work).contains("OUTPUT_DIR"))
+        // A plain chat has no sandbox, so it is told nothing about one and sends no container.
+        val (chat, _) = RequestBuilder.build(cfg(), listOf(user("hi")), tools(), emptySet(), "cnt_1") { null }
+        assertEquals(null, chat["container"])
+        assertFalse(RequestBuilder.system(cfg()).contains("OUTPUT_DIR"))
+        // Work can hand a workspace file to the sandbox; a file it sent goes in with the result that reports it, until it expires.
+        assertTrue(body.toString().contains(Tools.SANDBOX_PUT))
+        assertFalse(chat.toString().contains(Tools.SANDBOX_PUT))
+        val sent = buildJsonObject { put("role", "user"); put("content", parseArray("""[{"type":"tool_result","tool_use_id":"t1","content":"a.docx is now in the sandbox. [sandbox file file_abc123 until 2000]"}]""")) }
+        val (fresh, _) = RequestBuilder.build(work, listOf(user("convert"), sent), tools(), emptySet(), null, 1000) { null }
+        assertTrue(fresh.toString().contains("""{"type":"container_upload","file_id":"file_abc123"}"""))
+        val (late, _) = RequestBuilder.build(work, listOf(user("convert"), sent), tools(), emptySet(), null, 3000) { null }
+        assertFalse(late.toString().contains("container_upload"))
+        val (plain, _) = RequestBuilder.build(cfg(), listOf(user("convert"), sent), tools(), emptySet(), null, 1000) { null }
+        assertFalse(plain.toString().contains("container_upload"))
+        // The container the reply ran in is read from the stream.
+        val a = asm("""{"type":"message_start","message":{"id":"m1","model":"x","container":{"id":"cnt_9"},"usage":{"input_tokens":1}}}""", """{"type":"message_stop"}""")
+        assertEquals("cnt_9", a.toMessage().container)
     }
 }

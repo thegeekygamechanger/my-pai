@@ -149,7 +149,7 @@ private fun NavItem(icon: ImageVector, label: String, selected: Boolean, onClick
  * The frame of the app. It opens straight into a chat. History, the workspace and settings live in a side
  * navigation: a rail that is always there on a wide window, a drawer that slides in on a phone.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun Nav(host: Host) {
     val g = LocalGraph.current
@@ -194,6 +194,15 @@ private fun Nav(host: Host) {
         val total = maxWidth
         val wide = total >= 840.dp
         CompositionLocalProvider(LocalWide provides wide) {
+            // History slides up over whatever is on screen, and goes away again when a chat is picked.
+            if (historyOpen) androidx.compose.material3.ModalBottomSheet(
+                onDismissRequest = { historyOpen = false },
+                sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            ) {
+                Box(Modifier.fillMaxWidth().fillMaxHeight(0.86f)) {
+                    HistoryScreen(onOpen = { id -> historyOpen = false; openChat(id) }, onMenu = null, onNew = { historyOpen = false; newChat() }, selected = (current as? Screen.Chat)?.id, inSheet = true)
+                }
+            }
             if (wide) {
                 OnBack(screen !is Screen.Chat) { backToChat() }
                 Row(Modifier.fillMaxSize()) {
@@ -210,18 +219,13 @@ private fun Nav(host: Host) {
                         }
                         AnimatedVisibility(railOpen, Modifier.weight(1f), enter = fadeIn() + androidx.compose.animation.expandVertically(spring(dampingRatio = 0.85f, stiffness = 380f)), exit = fadeOut() + androidx.compose.animation.shrinkVertically(spring(stiffness = 500f))) {
                             Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                NavItem(Icons.Rounded.History, "History", historyOpen) { historyOpen = !historyOpen; aboutOpen = false }
+                                NavItem(Icons.Rounded.History, "History", historyOpen) { historyOpen = true }
                                 NavItem(Icons.Rounded.FolderOpen, "Files", screen == Screen.Workspace) { if (screen == Screen.Workspace) backToChat() else go(Screen.Workspace) }
                                 NavItem(Icons.Rounded.Schedule, "Tasks", screen == Screen.Schedules) { if (screen == Screen.Schedules) backToChat() else go(Screen.Schedules) }
                                 Spacer(Modifier.weight(1f))
                                 NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings || screen is Screen.Doc) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
                                 Text("v" + g.platform.versionName, style = MaterialTheme.typography.labelSmall, color = cs.outline)
                             }
-                        }
-                    }
-                    AnimatedVisibility(historyOpen, enter = expandHorizontally(spring(dampingRatio = 0.85f, stiffness = 380f)) + fadeIn(), exit = shrinkHorizontally(spring(stiffness = 500f)) + fadeOut()) {
-                        Box(Modifier.width(if (total >= 1280.dp) 360.dp else 300.dp).fillMaxHeight()) {
-                            HistoryScreen(onOpen = openChat, onMenu = null, onNew = newChat, selected = (screen as? Screen.Chat)?.id)
                         }
                     }
                     Box(Modifier.weight(1f).fillMaxHeight().padding(top = 10.dp, end = 10.dp, bottom = 10.dp).clip(RoundedCornerShape(28.dp)).background(cs.surface)) {
@@ -265,7 +269,7 @@ private fun Nav(host: Host) {
                             }
                             val item = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                             NavigationDrawerItem({ Text("New chat") }, false, { scope.launch { drawer.close() }; newChat() }, item, icon = { Icon(Icons.Rounded.Add, null) })
-                            NavigationDrawerItem({ Text("History") }, screen == Screen.History, { pick(Screen.History) }, item, icon = { Icon(Icons.Rounded.History, null) })
+                            NavigationDrawerItem({ Text("History") }, historyOpen, { scope.launch { drawer.close() }; historyOpen = true }, item, icon = { Icon(Icons.Rounded.History, null) })
                             NavigationDrawerItem({ Text("Workspace files") }, screen == Screen.Workspace, { pick(Screen.Workspace) }, item, icon = { Icon(Icons.Rounded.FolderOpen, null) })
                             NavigationDrawerItem({ Text("Scheduled tasks") }, screen == Screen.Schedules, { pick(Screen.Schedules) }, item, icon = { Icon(Icons.Rounded.Schedule, null) })
                             Spacer(Modifier.weight(1f))

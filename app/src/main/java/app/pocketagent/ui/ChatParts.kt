@@ -245,7 +245,7 @@ fun UserRow(row: UiRow.User, modifier: Modifier, onCopy: (String) -> Unit, onEdi
 @Composable
 fun MdRow(row: UiRow.Md, modifier: Modifier) {
     val pad = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
-    if (row.live || row.block is MdBlock.Code || row.block is MdBlock.Table || row.block == MdBlock.Rule) MdBlockView(row.block, modifier.then(pad), fadeTail = row.live && LocalMotion.current)
+    if (row.live || row.block is MdBlock.Code || row.block is MdBlock.Table || row.block == MdBlock.Rule) MdBlockView(row.block, modifier.then(pad), limit = if (LocalMotion.current) row.upTo else -1)
     else SelectionContainer(modifier) { MdBlockView(row.block, pad) }
 }
 
@@ -368,6 +368,7 @@ private fun Mono(text: String) {
 @Composable
 fun NoteRow(row: UiRow.Note, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
+    if (!row.error && row.text.startsWith(app.pocketagent.ai.RunManager.SAVED)) { ProducedFile(row, modifier); return }
     if (row.error) Surface(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), shape = MaterialTheme.shapes.medium, color = cs.errorContainer, contentColor = cs.onErrorContainer) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(20.dp))
@@ -597,6 +598,37 @@ fun pulse(): Float {
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.padding(start = 4.dp, bottom = 8.dp, top = 4.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+}
+
+/** A file the assistant made (a PDF, a spreadsheet, a chart): its name with a way to open it, and the picture itself when it is one. */
+@Composable
+private fun ProducedFile(row: UiRow.Note, modifier: Modifier) {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    val lines = row.text.removePrefix(app.pocketagent.ai.RunManager.SAVED).lines()
+    val name = lines.first().trim()
+    val picture = lines.getOrNull(1)?.trim()?.takeIf { it.startsWith("att/") }
+    val file = remember(name) { g.workspace.resolve(name) }
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        if (picture != null) {
+            val bmp = rememberThumb(picture, 1600)
+            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.padding(bottom = 8.dp).widthIn(max = 560.dp).clip(MaterialTheme.shapes.large).clickable { g.platform.openFile(file) }) {
+                if (bmp != null) Image(bmp, "$name. Opens in full size.", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                else Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Image, null, tint = cs.onSurfaceVariant) }
+            }
+        }
+        Surface(onClick = { g.platform.openFile(file) }, shape = MaterialTheme.shapes.large, color = cs.secondaryContainer.copy(alpha = 0.7f), contentColor = cs.onSecondaryContainer, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+            Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, null, Modifier.size(22.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Saved in Files", style = MaterialTheme.typography.bodySmall, color = cs.onSecondaryContainer.copy(alpha = 0.75f))
+                }
+                TextButton({ g.platform.openFile(file) }) { Text("Open") }
+                TextButton({ g.platform.shareFile(file) }) { Text(if (g.platform.isDesktop) "Folder" else "Share") }
+            }
+        }
+    }
 }
 
 /** The searches, pages and code behind a reply as one quiet line; tapping it shows each step. */

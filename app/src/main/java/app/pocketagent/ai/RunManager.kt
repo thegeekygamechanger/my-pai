@@ -5,6 +5,7 @@ import app.pocketagent.data.Chat
 import app.pocketagent.data.ChatDao
 import app.pocketagent.data.Msg
 import app.pocketagent.data.Settings
+import app.pocketagent.data.ToolError
 import app.pocketagent.data.instructions
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -59,6 +60,8 @@ interface RunHost {
     fun provider(id: String): Provider?
     fun key(providerId: String): String?
     fun modelInfo(id: String): ModelInfo?
+    /** Keeps a file the code sandbox produced: in the workspace, and for a picture also where the chat can show it. Returns the lines of the note about it. */
+    fun saveProduced(name: String, bytes: ByteArray): String = name
     /** The models of a service, for choosing one when the chat is set to Auto. */
     fun models(providerId: String): List<ModelInfo> = emptyList()
     fun attachment(path: String): ByteArray?
@@ -169,6 +172,11 @@ class RunManager(
         _runs.update { m -> m[chatId]?.let { m + (chatId to change(it)) } ?: m }
     }
 
+    /** The code sandbox each chat is using, so its files last from one step of the work to the next. */
+    private val containers = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    /** Files the sandbox has handed over in the current run of each chat: name to a mark of the contents. */
+    private val produced = java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.ConcurrentHashMap<String, Int>>()
+
     private suspend fun history(chatId: Long): List<JsonObject> =
         dao.messages(chatId).filter { it.role != "note" }.map { m ->
             buildJsonObject { put("role", m.role); put("content", parseArray(blobs.unpack(m.content))) }
@@ -185,6 +193,7 @@ class RunManager(
         val chat = dao.chat(chatId) ?: return
         try {
             repairDangling(chatId, "Interrupted before this ran.")
+            produced.remove(chatId)
             val s = host.settings()
             val provider = host.provider(chat.provider) ?: throw ApiException(ApiException.Kind.NO_KEY, "The service this chat used is no longer set up. Pick another model.")
             // A chat set to Auto gets its model now, from what was just asked; it then stays the same for the whole run.
@@ -200,7 +209,8 @@ class RunManager(
             val server = Providers.serverTools(provider)
             val cfg = RunConfig(
                 provider = provider, model = model, effort = chat.effort, maxTokens = minOf(s.maxOutput, cap), customInstructions = s.instructions(),
-                agent = chat.agent, web = chat.web && server, code = chat.code && server, memory = chat.memory, fast = chat.fast && server,
+                // Work on a Claude model always has the code sandbox: it is how documents are converted and charts and office files are made.
+                agent = chat.agent, web = chat.web && server, code = chat.agent && server, memory = chat.memory, fast = chat.fast && server,
                 fallbacks = s.fallbacks, compaction = s.compaction,
             )
             // Reasoning blocks from earlier turns only stay valid while the system prompt and tools are unchanged.
@@ -301,7 +311,7 @@ class RunManager(
                             dirty.set(true)
                         }
                         if (anthropic) {
-                            val (body, betas) = RequestBuilder.build(cfg, history(chatId), tools, off, host::attachment)
+                            val (body, betas) = RequestBuilder.build(cfg, history(chatId), tools, off, containers[chatId], loadFile = host::attachment)
                             claude.stream(key, body, betas, onUpdate)
                         } else {
                             openai.stream(cfg.provider, key, OpenAiCompat.build(cfg, history(chatId), tools, off, host::attachment), onUpdate)
@@ -312,12 +322,15 @@ class RunManager(
                 }
                 latest.get()?.let { publish(chatId, it) }
                 assemblers.remove(chatId)
+                if (msg.container.isNotEmpty()) containers[chatId] = msg.container
                 return msg
             } catch (e: ApiException) {
                 if (e.kind == ApiException.Kind.BAD_REQUEST) {
                     val rejected = RequestBuilder.rejectedFeature(e.message.orEmpty(), sentFeatures(cfg, off))
                     if (rejected != null) { disabled += rejected; assemblers.remove(chatId); continue }
                     if (!stripped && RequestBuilder.isBindingError(e.message.orEmpty())) { stripThinking(chatId); stripped = true; assemblers.remove(chatId); continue }
+                    // A sandbox that has expired cannot be reused; the request goes again and gets a fresh one.
+                    if (containers[chatId] != null && e.message.orEmpty().contains("container", ignoreCase = true)) { containers.remove(chatId); assemblers.remove(chatId); continue }
                     throw e
                 }
                 if (!e.retryable || attempt >= MAX_RETRIES) throw e
@@ -362,6 +375,30 @@ class RunManager(
         )
         dao.addUsage(chatId, u.input, u.output, u.cacheRead, u.cacheWrite, if (cfg.provider.kind == "anthropic") u.costMicros(msg.model.ifEmpty { cfg.model }, cfg.fast && ModelCaps.fast(cfg.model)) else 0)
         if (preview.isNotEmpty()) dao.touch(chatId, now, preview)
+        if (cfg.provider.kind == "anthropic") saveProduced(chatId, cfg, msg)
+    }
+
+    /**
+     * Files that code in the sandbox left in its output folder come back as ids in the result of the command.
+     * Each is fetched, kept in the workspace under its own name, and noted in the chat so the person can open it.
+     */
+    private suspend fun saveProduced(chatId: Long, cfg: RunConfig, msg: ApiMessage) {
+        val ids = msg.content.mapNotNull { it as? JsonObject }
+            .filter { it.str("type") == "bash_code_execution_tool_result" || it.str("type") == "code_execution_tool_result" }
+            .flatMap { r -> r.obj("content")?.arr("content").orEmpty().mapNotNull { f -> (f as? JsonObject)?.str("file_id") } }
+            .distinct()
+        if (ids.isEmpty()) return
+        val key = host.key(cfg.provider.id) ?: return
+        for (id in ids) {
+            val got = runCatching { claude.sandboxFile(key, id) }.getOrNull()
+            if (got == null) { note(chatId, "info", "A file that was made could not be fetched. Ask for it again."); continue }
+            // The same file handed over twice in one run (made, then copied out again with another) is shown once.
+            val mark = got.second.contentHashCode()
+            val seen = produced.getOrPut(chatId) { java.util.concurrent.ConcurrentHashMap() }
+            if (seen.put(got.first, mark) == mark) continue
+            val lines = runCatching { host.saveProduced(got.first, got.second) }.getOrNull()
+            if (lines == null) note(chatId, "info", "${got.first} was made but could not be saved on this device.") else note(chatId, "file", SAVED + lines)
+        }
     }
 
     /** Keeps the text that had arrived when a reply was stopped or the connection failed. */
@@ -413,6 +450,10 @@ class RunManager(
                 val outcome = when {
                     id in invalid -> ToolOutcome(buildJsonObject { put("INVALID_JSON", invalid[id].orEmpty()) }.toString(), true)
                     !approved(chatId, chat, id, name, input) -> ToolOutcome("The person declined this action. Do not try it again; ask what they would like instead.", true)
+                    name == Tools.SANDBOX_PUT -> {
+                        setState(chatId) { it.copy(phase = Phase.TOOL, runningTool = id) }
+                        sendToSandbox(chat, input)
+                    }
                     else -> {
                         setState(chatId) { it.copy(phase = Phase.TOOL, runningTool = id) }
                         // Interruptible, so Stop also ends a long wait such as a video being made.
@@ -430,6 +471,24 @@ class RunManager(
                 }
                 dao.insert(Msg(chatId = chatId, role = "user", content = blobs.pack(chatId, JsonArray(results.values.toList()).toString()), createdAt = System.currentTimeMillis()))
             }
+        }
+    }
+
+    /** Copies a workspace file to the service, where the code sandbox is given it with the next step. */
+    private suspend fun sendToSandbox(chat: Chat, input: JsonObject): ToolOutcome {
+        val key = host.key(chat.provider) ?: return ToolOutcome("No API key is set, so the file could not be sent.", true)
+        return try {
+            val (name, bytes) = withContext(Dispatchers.IO) { tools.sandboxFile(input.str("path") ?: throw ToolError("Missing required field: path")) }
+            val id = claude.sandboxUpload(key, name, bytes)
+            val until = System.currentTimeMillis() / 1000 + ClaudeApi.UPLOAD_SECONDS - 3600
+            ToolOutcome(
+                "$name (${bytes.size} bytes) is now in the sandbox. It is under /files/input/ and not in the working folder: find it with  find /files/input -name '${name.replace("'", "")}'  and work on a copy. " +
+                    "[sandbox file $id until $until]",
+            )
+        } catch (e: ToolError) {
+            ToolOutcome(e.message ?: "The file could not be read.", true)
+        } catch (e: ApiException) {
+            ToolOutcome("The file could not be sent to the sandbox: ${e.friendly}", true)
         }
     }
 
@@ -459,5 +518,9 @@ class RunManager(
         return decision != Decision.DENY
     }
 
-    private companion object { const val MAX_RETRIES = 4 }
+    companion object {
+        private const val MAX_RETRIES = 4
+        /** How a note about a file the sandbox produced begins; the chat shows such a note as a file to open. */
+        const val SAVED = "Saved to Files: "
+    }
 }

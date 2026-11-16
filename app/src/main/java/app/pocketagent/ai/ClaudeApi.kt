@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -33,6 +34,45 @@ class ClaudeApi(private val baseUrl: () -> String) {
             .header("x-api-key", key)
             .header("anthropic-version", API_VERSION)
             .apply { if (betas.isNotEmpty()) header("anthropic-beta", betas.joinToString(",")) }
+
+    /**
+     * Fetches a file that code in the sandbox produced.
+     * @return its name and contents, or null if it is gone or too large to keep on the device
+     */
+    suspend fun sandboxFile(key: String, fileId: String): Pair<String, ByteArray>? = withContext(Dispatchers.IO) {
+        val name = http.newCall(request("/v1/files/$fileId", key).build()).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext null
+            parseObject(resp.body.string())?.str("filename")?.takeIf { it.isNotBlank() } ?: "file-$fileId"
+        }
+        http.newCall(request("/v1/files/$fileId/content", key).build()).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext null
+            val bytes = resp.body.bytes()
+            if (bytes.size > 60 * 1024 * 1024) null else name to bytes
+        }
+    }
+
+    /**
+     * Puts a file from the device where code in the sandbox can be given it. It is kept in the person's own
+     * account at the service and removes itself when the sandbox it was for is gone.
+     * @return the id to hand to the sandbox
+     */
+    suspend fun sandboxUpload(key: String, name: String, bytes: ByteArray): String = withContext(Dispatchers.IO) {
+        val safe = name.map { if (it in "<>:\"|?*\\/" || it.code < 32) '_' else it }.joinToString("").take(200).ifBlank { "file" }
+        val type = runCatching { java.net.URLConnection.guessContentTypeFromName(safe) }.getOrNull() ?: "application/octet-stream"
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("expires_in_seconds", UPLOAD_SECONDS.toString())
+            .addFormDataPart("file", safe, bytes.toRequestBody(type.toMediaType()))
+            .build()
+        try {
+            http.newCall(request("/v1/files", key).post(body).build()).execute().use { resp ->
+                val text = resp.body.string()
+                if (!resp.isSuccessful) throw ApiException.fromHttp(resp.code, text, 0)
+                parseObject(text)?.str("id")?.takeIf { it.isNotBlank() } ?: throw ApiException(ApiException.Kind.SERVER, "Unexpected answer from the service.")
+            }
+        } catch (e: IOException) {
+            throw ApiException(ApiException.Kind.NETWORK, "The file could not be sent: " + (e.message ?: "no connection"))
+        }
+    }
 
     /** Every Claude model this key can use, newest first. Also the way a pasted key is checked. */
     suspend fun listModels(key: String): List<ModelInfo> = withContext(Dispatchers.IO) {
@@ -103,6 +143,8 @@ class ClaudeApi(private val baseUrl: () -> String) {
 
     companion object {
         const val API_VERSION = "2026-10-21"
+        /** How long a file sent to the sandbox is kept at the service: as long as a sandbox can live. */
+        const val UPLOAD_SECONDS = 30L * 24 * 3600
         const val PRODUCTION = "https://api.anthropic.com"
         private val JSON = "application/json".toMediaType()
     }

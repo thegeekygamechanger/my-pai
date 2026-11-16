@@ -77,8 +77,8 @@ Your chats, attachments, workspace files, memory notes and settings are stored o
 
 ## What leaves your device
 - **Your messages and attachments** go straight from the app to the AI service you chose, over HTTPS, so it can reply. That service handles them under its own privacy policy.
-- **Web search and code sandbox**, when you switch them on, run on the AI service's side.
-- **Pictures and videos**, only when you ask for one: the description of what to create goes to Google (Gemini), OpenAI or Pollinations with your own key for that service, and the result is saved on your device. If none of your keys can make pictures, the description goes to Pollinations' free open-source service instead, without any key or account; you can switch that off in Settings.
+- **Web search and the code sandbox** run on the AI service's side. In Work with a Claude model, the sandbox is where documents are converted and charts and office files are made: the text or the workspace file you ask it to work on is sent there, and the files it makes are fetched back and saved on your device. A file sent there is kept in your own account at the AI service for up to 30 days, then removed.
+- **Pictures and videos**, only when you ask for one: the description of what to create goes to Google (Gemini), OpenAI or Pollinations with your own key for that service, and the result is saved on your device. Without such a key the app does not make pictures or videos.
 - **Voice typing.** On a phone, your speech is turned into text by the phone's own speech service. On a computer it goes to Groq or OpenAI if you added a key for one of them; with no such key it is recognised on the computer itself and never leaves it, after a language pack is fetched once from alphacephei.com.
 - **Weather**, only if you enter a city: the app asks Open-Meteo for the current weather there, to shape the greeting and the colours of the first screen. Open-Meteo sees the city and your IP address.
 - **Update checks** ask GitHub whether a newer release exists. GitHub sees your IP address, as any website does.

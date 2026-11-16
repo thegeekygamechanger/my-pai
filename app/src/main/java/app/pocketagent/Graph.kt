@@ -77,7 +77,7 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         app.pocketagent.sync.ShareHost(this, chatId).also { it.start(); shares[chatId] = it }
     }
 
-    val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir, free = { settings.value?.freeImages != false })
+    val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir)
     val tools = Tools(workspace, memory, toolHost, integrations, media)
 
     private val runHost = object : RunHost {
@@ -86,6 +86,19 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun key(providerId: String): String? = keyFor(providerId)
         override fun modelInfo(id: String): ModelInfo? = allModels().firstOrNull { it.id == id }
         override fun models(providerId: String): List<ModelInfo> = this@Graph.models(providerId)
+        override fun saveProduced(name: String, bytes: ByteArray): String {
+            // Only the name counts, never a path, so nothing can be written outside the workspace.
+            val safe = File(name).name.ifBlank { "file" }
+            workspace.resolve(safe).apply { parentFile?.mkdirs() }.writeBytes(bytes)
+            sync.filesMayHaveChanged()
+            // A picture is also kept where the chat can draw it.
+            val ext = safe.substringAfterLast('.', "").lowercase()
+            if (ext !in setOf("png", "jpg", "jpeg", "webp", "gif")) return safe
+            attach.dir.mkdirs()
+            val shown = "gen-" + java.util.UUID.randomUUID() + "." + (if (ext == "jpeg") "jpg" else ext)
+            File(attach.dir, shown).writeBytes(bytes)
+            return safe + "\natt/" + shown
+        }
         override fun attachment(path: String): ByteArray? = attach.file(path).takeIf { it.isFile }?.readBytes()
         override fun runsChanged(active: Boolean) = platform.runsChanged(active)
         override fun finished(chat: Chat, replyPreview: String, failed: Boolean) {

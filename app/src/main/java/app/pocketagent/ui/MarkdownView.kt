@@ -59,12 +59,12 @@ import app.pocketagent.ui.theme.LocalCodeColors
 import kotlinx.coroutines.delay
 
 /**
- * Inline Markdown as styled text. With [fadeTail], for text that is still arriving, the words are not shown
- * the instant they land: a soft edge sweeps along the line at an even pace and the text fades in behind it,
- * so a reply seems to be written out rather than to jump forward in bursts.
+ * Inline Markdown as styled text. With [limit] (0 or more), the text is being written out: only that many of its
+ * characters are there, and the last few fade in, so a reply seems to be written rather than to appear at once.
+ * A limit past the end of the text lets that fading edge run off the end.
  */
 @Composable
-fun inlineText(text: String, fadeTail: Boolean = false): AnnotatedString {
+fun inlineText(text: String, limit: Int = -1): AnnotatedString {
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHighest
     val base = MaterialTheme.colorScheme.onSurface
@@ -87,56 +87,34 @@ fun inlineText(text: String, fadeTail: Boolean = false): AnnotatedString {
             }
         }
     }
-    if (!fadeTail) return built
-    val shown = revealed(built.length)
-    return remember(built, shown, base) {
-        if (shown >= built.length + REVEAL_EDGE) built else buildAnnotatedString {
-            append(built)
-            // Behind the edge the text is at full strength; across the edge it fades; ahead of it, it is not there yet.
+    if (limit < 0) return built
+    // The limit counts characters as they were written, with their Markdown marks; the edge is placed in the styled text.
+    val edge = if (limit >= text.length || text.isEmpty()) built.length + (limit - text.length) else (limit.toLong() * built.length / text.length).toInt()
+    if (edge >= built.length + WRITE_EDGE) return built
+    return remember(built, edge, base) {
+        var cut = edge.coerceIn(0, built.length)
+        if (cut in 1 until built.length && Character.isHighSurrogate(built[cut - 1])) cut--
+        buildAnnotatedString {
+            append(built.subSequence(0, cut))
+            // Behind the edge the words are at full strength; across it they fade in.
             val steps = 8
-            val per = REVEAL_EDGE / steps
+            val per = WRITE_EDGE / steps
             for (k in 0 until steps) {
-                val end = (shown - k * per).coerceIn(0, length)
-                val start = (shown - (k + 1) * per).coerceIn(0, length)
-                if (end > start) addStyle(SpanStyle(color = base.copy(alpha = (k + 0.5f) / steps)), start, end)
+                val end = (edge - k * per).coerceIn(0, length)
+                val start = (edge - (k + 1) * per).coerceIn(0, length)
+                if (end > start) addStyle(SpanStyle(color = base.copy(alpha = base.alpha * (k + 0.5f) / steps)), start, end)
             }
-            val from = shown.coerceIn(0, length)
-            if (from < length) addStyle(SpanStyle(color = Color.Transparent, background = Color.Transparent), from, length)
         }
     }
 }
 
-private const val REVEAL_EDGE = 16
-
-/**
- * How many characters of a growing text to show, counted past the fading edge. It runs after the real length:
- * steadily when it is close, faster when a burst has put it far behind, so it never lags by more than a moment.
- */
 @Composable
-private fun revealed(length: Int): Int {
-    val target by rememberUpdatedState(length + REVEAL_EDGE)
-    var at by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = ((now - last) / 1e9f).coerceIn(0f, 0.1f)
-            last = now
-            val behind = target - at
-            if (behind > 0f) at = (at + dt * maxOf(90f, behind * 7f)).coerceAtMost(target.toFloat())
-            else if (behind < 0f) at = target.toFloat()
-        }
-    }
-    return at.toInt()
-}
-
-@Composable
-fun MdBlockView(block: MdBlock, modifier: Modifier = Modifier, fadeTail: Boolean = false) {
+fun MdBlockView(block: MdBlock, modifier: Modifier = Modifier, limit: Int = -1) {
     val cs = MaterialTheme.colorScheme
     when (block) {
-        is MdBlock.Para -> Text(inlineText(block.text, fadeTail), modifier, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+        is MdBlock.Para -> Text(inlineText(block.text, limit), modifier, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
         is MdBlock.Heading -> Text(
-            inlineText(block.text, fadeTail), modifier.padding(top = if (block.level <= 2) 6.dp else 2.dp),
+            inlineText(block.text, limit), modifier.padding(top = if (block.level <= 2) 6.dp else 2.dp),
             style = when (block.level) {
                 1 -> MaterialTheme.typography.headlineSmall
                 2 -> MaterialTheme.typography.titleLarge
@@ -144,9 +122,14 @@ fun MdBlockView(block: MdBlock, modifier: Modifier = Modifier, fadeTail: Boolean
             },
             color = cs.onSurface,
         )
-        is MdBlock.Code -> CodeBlock(block, modifier)
+        is MdBlock.Code -> CodeBlock(block, modifier, limit)
         is MdBlock.Items -> Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            block.items.forEachIndexed { idx, item ->
+            // While the list is being written out its items appear one after another, each from its first word.
+            var before = 0
+            for (item in block.items) {
+                val mine = if (limit < 0) -1 else limit - before
+                before += item.text.length
+                if (limit >= 0 && mine <= 0) break
                 Row(Modifier.padding(start = (item.indent.coerceAtMost(4) * 18).dp)) {
                     when (item.checked) {
                         null -> Text(
@@ -158,21 +141,23 @@ fun MdBlockView(block: MdBlock, modifier: Modifier = Modifier, fadeTail: Boolean
                             Modifier.padding(top = 3.dp, end = 6.dp).size(18.dp), tint = if (item.checked) cs.primary else cs.outline,
                         )
                     }
-                    Text(inlineText(item.text, fadeTail && idx == block.items.lastIndex), style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+                    Text(inlineText(item.text, mine), style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
                 }
             }
         }
         is MdBlock.Quote -> Row(modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(cs.primary.copy(alpha = 0.6f), RoundedCornerShape(2.dp)))
-            Text(inlineText(block.text, fadeTail), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic), color = cs.onSurfaceVariant)
+            Text(inlineText(block.text, limit), Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic), color = cs.onSurfaceVariant)
         }
-        is MdBlock.Table -> TableView(block, modifier)
+        is MdBlock.Table -> TableView(block, modifier, limit)
         MdBlock.Rule -> HorizontalDivider(modifier.padding(vertical = 4.dp), color = cs.outlineVariant)
     }
 }
 
 @Composable
-private fun CodeBlock(block: MdBlock.Code, modifier: Modifier) {
+private fun CodeBlock(whole: MdBlock.Code, modifier: Modifier, limit: Int = -1) {
+    // Being written out, the code grows a little at a time like the text around it.
+    val block = if (limit < 0 || limit >= whole.code.length) whole else whole.copy(code = whole.code.take(limit))
     val cs = MaterialTheme.colorScheme
     val colors = LocalCodeColors.current
     val clipboard = LocalClipboardManager.current
@@ -215,12 +200,17 @@ private fun CodeBlock(block: MdBlock.Code, modifier: Modifier) {
 }
 
 @Composable
-private fun TableView(t: MdBlock.Table, modifier: Modifier) {
+private fun TableView(whole: MdBlock.Table, modifier: Modifier, limit: Int = -1) {
+    // Being written out, the table gains one row at a time. Its columns are sized for the whole table from the start.
+    val t = if (limit < 0) whole else {
+        var left = limit - whole.header.sumOf { it.length }
+        whole.copy(rows = whole.rows.takeWhile { r -> left -= r.sumOf { it.length }; left >= 0 })
+    }
     val cs = MaterialTheme.colorScheme
-    val cols = maxOf(t.header.size, t.rows.maxOfOrNull { it.size } ?: 0)
-    val widths = remember(t) {
+    val cols = maxOf(whole.header.size, whole.rows.maxOfOrNull { it.size } ?: 0)
+    val widths = remember(whole) {
         (0 until cols).map { c ->
-            val longest = maxOf(t.header.getOrNull(c)?.length ?: 0, t.rows.maxOfOrNull { it.getOrNull(c)?.length ?: 0 } ?: 0)
+            val longest = maxOf(whole.header.getOrNull(c)?.length ?: 0, whole.rows.maxOfOrNull { it.getOrNull(c)?.length ?: 0 } ?: 0)
             (longest * 8 + 28).coerceIn(72, 240)
         }
     }

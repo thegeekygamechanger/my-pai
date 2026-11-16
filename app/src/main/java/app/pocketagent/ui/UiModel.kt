@@ -29,7 +29,8 @@ sealed interface UiRow {
     val key: String
 
     data class User(override val key: String, val msgId: Long, val text: String, val attachments: List<Attachment>) : UiRow
-    data class Md(override val key: String, val block: MdBlock, val live: Boolean) : UiRow
+    /** [upTo] is set while the block is being written out: how many of its characters are on screen so far (-1 = all). */
+    data class Md(override val key: String, val block: MdBlock, val live: Boolean, val upTo: Int = -1) : UiRow
     data class Thinking(override val key: String, val text: String, val active: Boolean) : UiRow
     data class Tool(
         override val key: String, val id: String, val name: String, val title: String, val server: Boolean,
@@ -45,6 +46,50 @@ sealed interface UiRow {
     data class Footer(override val key: String, val text: String, val model: String, val tokens: Long, val last: Boolean) : UiRow
     /** The line shown while a reply is on its way. [mood] picks the words it cycles through: think, search, read, image, video, work. */
     data class Status(override val key: String, val text: String, val retrying: Boolean, val mood: String = "think") : UiRow
+}
+
+/** Characters a block adds to a reply that is being written out. */
+fun MdBlock.chars(): Int = when (this) {
+    is MdBlock.Para -> text.length
+    is MdBlock.Heading -> text.length
+    is MdBlock.Quote -> text.length
+    is MdBlock.Code -> code.length
+    is MdBlock.Items -> items.sumOf { it.text.length }
+    is MdBlock.Table -> header.sumOf { it.length } + rows.sumOf { r -> r.sumOf { it.length } }
+    MdBlock.Rule -> 0
+}
+
+/** Writing a reply out: every block lasts a little longer than its text, so its last words finish fading in before the next begins. */
+const val WRITE_EDGE = 16
+
+/** How much of the writing-out a row takes up. Text counts by its length; a step or a note is a short beat; the rest is free. */
+fun UiRow.weight(): Int = when (this) {
+    is UiRow.Md -> block.chars() + WRITE_EDGE
+    is UiRow.Tool, is UiRow.Steps, is UiRow.Note, is UiRow.Sources -> 24
+    else -> 0
+}
+
+/** Where the newest turn begins: just after the last message the person sent. */
+private fun turnStart(rows: List<UiRow>): Int = rows.indexOfLast { it is UiRow.User } + 1
+
+/** The size of the newest turn, in the units of [weight]. */
+fun turnWeight(rows: List<UiRow>): Int { var n = 0; for (i in turnStart(rows) until rows.size) n += rows[i].weight(); return n }
+
+/**
+ * The rows with the newest turn written out only as far as [written]: whole rows that fit, then the block that is
+ * being written, cut at that point, and nothing after it. Older turns are never touched.
+ */
+fun writeOut(rows: List<UiRow>, written: Int): List<UiRow> {
+    val start = turnStart(rows)
+    var left = written
+    for (i in start until rows.size) {
+        val row = rows[i]
+        val w = row.weight()
+        if (left >= w) { left -= w; continue }
+        val head = rows.subList(0, i)
+        return if (row is UiRow.Md && left > 0) head + row.copy(live = true, upTo = left) else head
+    }
+    return rows
 }
 
 /** A stored message, already parsed. Parsing is cached per message because rows are rebuilt on every change. */

@@ -85,7 +85,7 @@ fun friendlyTime(ms: Long): String {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Unit, selected: Long?) {
+fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Unit, selected: Long?, inSheet: Boolean = false) {
     val g = LocalGraph.current
     val wide = LocalWide.current
     var openShared by remember { mutableStateOf(false) }
@@ -101,8 +101,9 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     var deleting by remember { mutableStateOf<Chat?>(null) }
     val visible = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
 
-    Box(Modifier.fillMaxSize().background(if (wide) androidx.compose.ui.graphics.Color.Transparent else cs.surface)) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    // Inside the slide-up sheet it takes the sheet's own ground and needs no room for the status bar.
+    Box(Modifier.fillMaxSize().background(if (wide || inSheet) androidx.compose.ui.graphics.Color.Transparent else cs.surface)) {
+        Column(if (inSheet) Modifier.fillMaxSize() else Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = if (onMenu != null) 4.dp else 22.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
                 Text("History", Modifier.weight(1f).padding(start = if (onMenu != null) 6.dp else 0.dp), style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)

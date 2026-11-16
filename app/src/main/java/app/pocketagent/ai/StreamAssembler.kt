@@ -16,6 +16,8 @@ class ApiMessage(
     val usage: Usage,
     /** tool_use id -> the raw text the model sent, for calls whose input was not valid JSON. */
     val invalidInputs: Map<String, String>,
+    /** The code sandbox this reply ran in, if any; sending it back keeps the sandbox's files for the next step. */
+    val container: String = "",
 )
 
 /** One block of a reply while it is still arriving, for drawing on screen. */
@@ -49,6 +51,7 @@ class StreamAssembler : LiveReply {
     var stopReason: String? = null; private set
     var finished = false; private set
     private var stopDetails: JsonObject? = null
+    private var container = ""
     private val usage = LinkedHashMap<String, Long>()
     private val blocks = ArrayList<Block?>()
     private val invalid = LinkedHashMap<String, String>()
@@ -60,6 +63,7 @@ class StreamAssembler : LiveReply {
                 id = m.str("id").orEmpty()
                 model = m.str("model").orEmpty()
                 m.obj("usage")?.let(::mergeUsage)
+                m.obj("container")?.str("id")?.let { container = it }
             }
             "content_block_start" -> {
                 val i = ev.long("index")?.toInt() ?: return
@@ -85,7 +89,9 @@ class StreamAssembler : LiveReply {
                 ev.obj("delta")?.let { d ->
                     d.str("stop_reason")?.let { stopReason = it }
                     d.obj("stop_details")?.let { stopDetails = it }
+                    d.obj("container")?.str("id")?.let { container = it }
                 }
+                ev.obj("container")?.str("id")?.let { container = it }
                 ev.obj("usage")?.let(::mergeUsage)
             }
             "message_stop" -> finished = true
@@ -127,7 +133,7 @@ class StreamAssembler : LiveReply {
     fun toMessage(): ApiMessage {
         invalid.clear()
         val content = JsonArray(blocks.filterNotNull().map { it.build() })
-        return ApiMessage(id, model, content, stopReason ?: "end_turn", stopDetails, usage(), invalid.toMap())
+        return ApiMessage(id, model, content, stopReason ?: "end_turn", stopDetails, usage(), invalid.toMap(), container)
     }
 
     /** A cheap picture of the reply so far. */

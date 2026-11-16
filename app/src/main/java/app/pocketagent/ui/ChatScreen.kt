@@ -103,6 +103,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -207,34 +208,43 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     }
     val shown = run ?: held?.takeIf { h -> h.apiId.isNotEmpty() && messages.none { it.apiId == h.apiId } }
 
-    // Text arrives from the network in uneven bursts. Reveal it at a steady pace instead.
-    val liveLast = shown?.live?.lastOrNull()?.takeIf { it.type == "text" && !it.done }
-    val liveKey = if (liveLast == null) "" else shown.apiId + ":" + shown.live.lastIndex
-    var revealed by remember { mutableIntStateOf(0) }
-    val target by rememberUpdatedState(liveLast?.text?.length ?: 0)
-    LaunchedEffect(liveKey) {
-        revealed = 0
-        if (liveKey.isEmpty() || !motion) return@LaunchedEffect
-        while (true) {
-            withFrameNanos { }
-            val gap = target - revealed
-            if (gap > 0) revealed += maxOf(1, (gap * 0.22f).roundToInt())
-        }
-    }
-    val paced = if (liveLast != null && motion && shown != null) {
-        var cut = revealed.coerceIn(0, liveLast.text.length)
-        if (cut in 1 until liveLast.text.length && Character.isHighSurrogate(liveLast.text[cut - 1])) cut--
-        shown.copy(live = shown.live.dropLast(1) + liveLast.copy(text = liveLast.text.substring(0, cut)))
-    } else shown
-
     val builder = remember(chatId) { RowBuilder(g.tools::describe, g.blobs::unpack) }
     val saved = remember(messages, run?.done, run?.pending, run == null, showThinking) { builder.persisted(messages, run, showThinking) }
-    val rows = saved + builder.tail(messages, paced, showThinking)
+    val rows = saved + builder.tail(messages, shown, showThinking)
+
+    // A reply is written out at an even pace, however it arrived: in bursts from the network, or all at once after
+    // a step of work. Whatever is on screen when a run starts stays as it is; everything that comes after it is
+    // written, and the writing carries on to the end even if the run has already finished.
+    val turnSize = remember(rows) { turnWeight(rows) }
+    val sizeNow by rememberUpdatedState(turnSize)
+    val running by rememberUpdatedState(run != null)
+    var writing by remember(chatId) { mutableStateOf(false) }
+    var written by remember(chatId) { mutableFloatStateOf(0f) }
+    LaunchedEffect(chatId, run != null) {
+        if (run == null || !motion) return@LaunchedEffect
+        if (!writing) { written = sizeNow.toFloat(); writing = true }
+    }
+    LaunchedEffect(chatId, writing) {
+        if (!writing) return@LaunchedEffect
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / 1e9f).coerceIn(0f, 0.1f)
+            last = now
+            val behind = sizeNow - written
+            // Close behind, it writes steadily; far behind (a long reply that landed whole), it writes faster, and never lags for long.
+            if (behind > 0f) written = minOf(sizeNow.toFloat(), written + dt * (behind * 3f).coerceIn(220f, 4000f))
+            // A new message, or a reply being written again: the turn starts over.
+            else if (behind < 0f) written = sizeNow.toFloat()
+            else if (!running) { writing = false; break }
+        }
+    }
+    val writtenRows = if (writing && motion) writeOut(rows, written.toInt()) else rows
     // Touching the conversation while a reply is being written means "let me read". The screen then holds
     // exactly what it showed at that moment, while the reply carries on behind it, until the person asks to
     // see the newest again. Nothing is ever scrolled out from under a reader.
     var held0 by remember { mutableStateOf<List<UiRow>?>(null) }
-    val shownRows = held0 ?: rows
+    val shownRows = held0 ?: writtenRows
     val latestRows by rememberUpdatedState(rows)
     val reversed = remember(shownRows) { shownRows.asReversed() }
 

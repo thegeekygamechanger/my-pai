@@ -86,8 +86,8 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
      * @param mediaOnly the tools an ordinary chat has too: the connected accounts (GitHub, Gmail) and making pictures
      *   and videos. Files, memory and the task list belong to Work.
      */
-    fun definitions(eager: Boolean, mediaOnly: Boolean = false): JsonArray = buildJsonArray {
-        for (s in (if (mediaOnly) emptyList() else specs) + integrations?.specs().orEmpty() + media?.specs().orEmpty()) add(buildJsonObject {
+    fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false): JsonArray = buildJsonArray {
+        for (s in (if (mediaOnly) emptyList() else specs) + (if (sandbox && !mediaOnly) listOf(SANDBOX_SPEC) else emptyList()) + integrations?.specs().orEmpty() + media?.specs().orEmpty()) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
             if (eager) put("eager_input_streaming", true)
@@ -101,6 +101,7 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
 
     fun risk(name: String, input: JsonObject): Risk = integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
         MEMORY -> if (input.str("command") == "view") Risk.READ else Risk.WRITE
+        SANDBOX_PUT -> Risk.READ
         else -> byName[name]?.risk ?: Risk.WRITE
     }
 
@@ -114,6 +115,7 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         "update_tasks" -> "Update the task list"
         "get_time" -> "Check the time"
         "copy_to_clipboard" -> "Copy to clipboard"
+        SANDBOX_PUT -> "Send " + input.str("path").orEmpty() + " to the sandbox"
         MEMORY -> when (input.str("command")) {
             "view" -> "Read memory"
             "delete" -> "Delete a memory note"
@@ -196,8 +198,29 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
 
     private fun clip(s: String): String = if (s.length <= MAX_RESULT) s else s.take(MAX_RESULT) + "\n[output cut at $MAX_RESULT characters]"
 
+    /** A workspace file exactly as it is on the device, to be handed to the code sandbox. */
+    fun sandboxFile(path: String): Pair<String, ByteArray> {
+        val f = workspace.resolve(path)
+        if (!f.isFile) throw ToolError("There is no file at $path. Use list_files to see what is in the workspace.")
+        if (f.length() > MAX_UPLOAD) throw ToolError("${f.name} is too large to send (the limit is ${MAX_UPLOAD / (1024 * 1024)} MB).")
+        return f.name to f.readBytes()
+    }
+
     companion object {
         const val MEMORY = "memory"
         const val MAX_RESULT = 150_000
+        /** Hands a workspace file to the code sandbox as it is. Run by the run loop, because it needs the service. */
+        const val SANDBOX_PUT = "send_to_sandbox"
+        const val MAX_UPLOAD = 40L * 1024 * 1024
+        val SANDBOX_SPEC = ToolSpec(
+            SANDBOX_PUT,
+            "Copy a file from the workspace into the code sandbox exactly as it is, so code there can open it. " +
+                "Use it for anything that is not plain text (a Word, Excel or PowerPoint file, a picture, a PDF, a zip, audio) and for text files too long to retype. " +
+                "The file is in the sandbox from your next step on; the result says how to find it.",
+            Risk.READ, listOf("path"),
+            buildJsonObject { put("path", buildJsonObject { put("type", "string"); put("description", "The file in the workspace, relative to the workspace folder.") }) },
+        )
+        /** Written into the result of [SANDBOX_PUT]: the id of the file at the service, and when it stops being valid (seconds since 1970). */
+        val SANDBOX_REF = Regex("\\[sandbox file (file_[A-Za-z0-9_-]+) until (\\d+)\\]")
     }
 }

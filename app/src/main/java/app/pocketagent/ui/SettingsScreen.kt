@@ -298,12 +298,12 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         Label("Longest reply", "The most a single reply can contain.")
                         Segmented(listOf(8_000 to "Short", 32_000 to "Normal", 64_000 to "Long", 128_000 to "Max"), s.maxOutput, { v -> set { it.copy(maxOutput = v) } }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
                     }
-                    Card("Pictures and videos", Icons.Rounded.Image, if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) "Your own key" else if (s.freeImages) "Free pictures" else "Off") {
+                    // Making pictures and videos is offered only when one of the person's own keys can do it; otherwise it is not mentioned at all.
+                    if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) Card("Pictures and videos", Icons.Rounded.Image, listOfNotNull("Gemini".takeIf { g.keyFor("gemini") != null }, "OpenAI".takeIf { g.keyFor("openai") != null }, "Pollinations".takeIf { g.keyFor("pollinations") != null }).joinToString(" · ")) {
                         Text(
-                            "Ask for a picture in any chat. With a Gemini, OpenAI or Pollinations key of your own it is made there, and videos too (Gemini or Pollinations). Without one, pictures can come from Pollinations, a free open-source service: what you describe is sent to it, and it makes one picture every 45 seconds or so.",
-                            Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                            "Ask for a picture in any chat and it is made with your own key and shown in the conversation. Videos work with a Gemini or Pollinations key.",
+                            Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
                         )
-                        SwitchRow("Free picture service", "Use Pollinations when no key of mine can make the picture.", s.freeImages) { on -> scope.launch { g.settingsStore.update { it.copy(freeImages = on) } } }
                     }
                 }
                 Group("You") {
