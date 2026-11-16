@@ -78,6 +78,9 @@ import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import app.pocketagent.data.incognito
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.InputChip
@@ -184,7 +187,7 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: () -> Unit, onWorkspace: () -> Unit, onDeleted: () -> Unit, onOpenChat: (Long) -> Unit = {}) {
+fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: () -> Unit, onWorkspace: () -> Unit, onDeleted: () -> Unit, onOpenChat: (Long) -> Unit = {}, onIncognito: () -> Unit = {}) {
     val g = LocalGraph.current
     val platform = g.platform
     val wide = LocalWide.current
@@ -283,6 +286,8 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     var editing by remember { mutableStateOf<UiRow.User?>(null) }
     var showControls by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    val incognito = chat?.incognito == true
     var importing by remember { mutableStateOf(false) }
     // Connected accounts the person has pulled into this message with "@".
     val mentions = remember(chatId) { mutableStateListOf<Mention>() }
@@ -401,7 +406,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         // On Auto, the model that wrote the last reply; before there is one, just "Auto".
                         val used = if (c.model == app.pocketagent.ai.AutoModel.ID) messages.lastOrNull { it.role == "assistant" && it.model.isNotEmpty() }?.model else null
                         Text(
-                            when {
+                            (if (incognito) "Incognito · " else "") + when {
                                 used != null -> named(used)
                                 c.model == app.pocketagent.ai.AutoModel.ID -> app.pocketagent.ai.AutoModel.NAME
                                 else -> named(c.model).ifBlank { "Choose a model" }
@@ -410,15 +415,34 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         )
                     }
                 }
-                // Hand the whole conversation to someone else with a short code. There is nothing to hand over until something has been said.
-                IconButton({ sharing = true }, enabled = messages.isNotEmpty()) { Icon(Icons.Rounded.Share, "Share this chat with a code", Modifier.size(21.dp)) }
-                // New chat sits alone in the top corner. It wakes up once something has been said here: an empty chat is already a new one.
+                // New chat, then the three dots. Both take their colours from the theme in use, light or dark.
+                // New chat wakes up once something has been said here: an empty chat is already a new one.
                 val canStartNew = messages.isNotEmpty() || run != null
+                val corner = cs.surfaceContainerHigh.copy(alpha = if (LocalDark.current) 0.72f else 0.8f)
+                val edge = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant.copy(alpha = 0.6f))
                 Surface(
-                    onClick = onNew, enabled = canStartNew, shape = CircleShape, color = cs.surface.copy(alpha = 0.35f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.12f)), modifier = Modifier.padding(start = 2.dp, end = 8.dp).size(44.dp).alpha(if (canStartNew) 1f else 0.38f),
+                    onClick = onNew, enabled = canStartNew, shape = CircleShape, color = corner, contentColor = cs.onSurface, border = edge,
+                    modifier = Modifier.padding(start = 2.dp).size(44.dp).alpha(if (canStartNew) 1f else 0.38f),
                 ) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "New chat") }
+                }
+                // Everything else about this chat: handing it to someone with a code, and going incognito.
+                Box(Modifier.padding(start = 8.dp, end = 8.dp)) {
+                    Surface(onClick = { menu = true }, shape = CircleShape, color = corner, contentColor = cs.onSurface, border = edge, modifier = Modifier.size(44.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MoreVert, "More for this chat") }
+                    }
+                    DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(24.dp), containerColor = cs.surfaceContainerHigh) {
+                        @Composable
+                        fun item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean = true, onClick: () -> Unit) = DropdownMenuItem(
+                            { Text(label) }, { menu = false; onClick() }, Modifier.padding(horizontal = 6.dp).clip(RoundedCornerShape(16.dp)), leadingIcon = { Icon(icon, null) }, enabled = enabled,
+                            colors = androidx.compose.material3.MenuDefaults.itemColors(textColor = cs.onSurface, leadingIconColor = cs.onSurfaceVariant),
+                        )
+                        // There is nothing to hand over until something has been said, and an incognito chat is never handed over.
+                        item("Share with a code", Icons.Rounded.Share, enabled = messages.isNotEmpty() && !incognito) { sharing = true }
+                        if (incognito) item("Leave incognito", Icons.Rounded.Visibility) { buzz(); onNew() }
+                        else item("Incognito chat", Icons.Rounded.VisibilityOff) { buzz(); onIncognito() }
+                        item("Model and tools", Icons.Rounded.Tune) { showControls = true }
+                    }
                 }
             }
 
@@ -428,7 +452,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             // Messages. On a wide window the column is kept to a comfortable reading width.
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {
-                    if (rows.isEmpty() && chat != null) EmptyChat(chatId, chat!!.agent)
+                    if (rows.isEmpty() && chat != null) EmptyChat(chatId, chat!!.agent, incognito)
                     else LazyColumn(
                         Modifier.fillMaxSize().nestedScroll(readingBack),
                         state = listState, reverseLayout = true, contentPadding = PaddingValues(top = 8.dp, bottom = 10.dp),
@@ -567,7 +591,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
 
 /** An empty chat: a greeting that changes with the hour, the weather and the person's name, over slowly moving colour. */
 @Composable
-private fun EmptyChat(chatId: Long, work: Boolean) {
+private fun EmptyChat(chatId: Long, work: Boolean, incognito: Boolean = false) {
     val g = LocalGraph.current
     val cs = MaterialTheme.colorScheme
     val settings by g.settings.collectAsState()
@@ -575,7 +599,11 @@ private fun EmptyChat(chatId: Long, work: Boolean) {
     val hour = remember(chatId) { java.time.LocalTime.now().hour }
     // A new pick every time a fresh chat is opened.
     val seed = remember(chatId) { kotlin.random.Random.nextInt() }
-    val (title, line) = remember(seed, settings?.name, weather, work) { greeting(settings?.name.orEmpty(), hour, weather, work, seed) }
+    // An incognito chat says what it is instead of greeting: nothing here is kept.
+    val (title, line) = remember(seed, settings?.name, weather, work, incognito) {
+        if (incognito) "Incognito chat" to "Not saved to history, not synced, no memory notes. It is erased when you leave it."
+        else greeting(settings?.name.orEmpty(), hour, weather, work, seed)
+    }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             AnimatedContent(title, transitionSpec = { (fadeIn(tween(450)) + slideInVertically { it / 3 }) togetherWith fadeOut(tween(200)) }, label = "greeting") { t ->

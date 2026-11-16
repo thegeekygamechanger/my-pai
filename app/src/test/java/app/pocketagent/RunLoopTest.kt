@@ -63,6 +63,7 @@ class RunLoopTest {
         override suspend fun tomb(uid: String) = tombRows[uid]
         override suspend fun clearTombs() { tombRows.clear() }
         override suspend fun allChats() = synchronized(chatRows) { chatRows.values.toList() }
+        override suspend fun incognitoChats(): List<Chat> = emptyList()
         override suspend fun insert(chat: Chat): Long = synchronized(chatRows) { val id = ids.incrementAndGet(); chatRows[id] = chat.copy(id = id); id }
         override suspend fun update(chat: Chat) { synchronized(chatRows) { chatRows[chat.id] = chat } }
         override suspend fun insert(msg: Msg): Long { val id = ids.incrementAndGet(); msgs += msg.copy(id = id); return id }

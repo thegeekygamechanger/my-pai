@@ -97,7 +97,20 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     }.collectAsState(null)
     val runs by g.allRuns.collectAsState()
     val listState = rememberLazyListState()
-    val visible = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
+    // What to show: newest first as usual, oldest first, or only one kind of chat.
+    var filter by rememberSaveable { mutableStateOf("new") }
+    val listed = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
+    val visible = listed?.let { all ->
+        when (filter) {
+            "old" -> all.sortedBy { it.updatedAt }
+            "running" -> all.filter { runs.containsKey(it.id) }
+            "pinned" -> all.filter { it.pinned }
+            "chat" -> all.filter { !it.agent }
+            "work" -> all.filter { it.agent }
+            "today" -> { val since = System.currentTimeMillis() - 24 * 3600_000L; all.filter { it.updatedAt >= since } }
+            else -> all
+        }
+    }
 
     // Inside the slide-up sheet it takes the sheet's own ground and needs no room for the status bar.
     Box(Modifier.fillMaxSize().background(if (wide || inSheet) androidx.compose.ui.graphics.Color.Transparent else cs.surface)) {
@@ -119,6 +132,10 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                     if (query.isNotEmpty()) Icon(Icons.Rounded.Close, "Clear search", Modifier.size(20.dp).clip(CircleShape).combinedClickable { query = "" }, tint = cs.onSurfaceVariant)
                 }
             }
+            if (!listed.isNullOrEmpty()) Choices(
+                listOf("new" to "New", "old" to "Old", "running" to "In progress", "today" to "Last 24 hours", "pinned" to "Pinned", "chat" to "Chat", "work" to "Work"),
+                filter, { filter = it }, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+            )
             UpdateBanner()
             when {
                 visible == null -> {}
@@ -126,7 +143,18 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                     Box(Modifier.size(88.dp).background(cs.secondaryContainer, MaterialShapes.Sunny.toShape()), contentAlignment = Alignment.Center) {
                         Icon(if (query.isBlank()) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.Search, null, Modifier.size(34.dp), tint = cs.onSecondaryContainer)
                     }
-                    Text(if (query.isBlank()) "No chats yet" else "Nothing found", Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        when {
+                            query.isNotBlank() -> "Nothing found"
+                            listed.isNullOrEmpty() -> "No chats yet"
+                            filter == "running" -> "Nothing in progress"
+                            filter == "pinned" -> "Nothing pinned"
+                            filter == "today" -> "Nothing in the last 24 hours"
+                            filter == "work" -> "No work yet"
+                            else -> "No chats here"
+                        },
+                        Modifier.padding(top = 18.dp), style = MaterialTheme.typography.titleLarge,
+                    )
                     if (query.isNotBlank()) Text("No chat matches \"$query\".", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
                 else -> LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

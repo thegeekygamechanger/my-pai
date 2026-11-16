@@ -105,8 +105,12 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
             sync.filesMayHaveChanged()
             val s = settings.value
             // A scheduled task announces its result with a sound wherever the person is; an ordinary reply only speaks up when they have gone to another app.
-            if (scheduler.wasScheduled(chat.id)) { if (s?.notifyTasks != false) platform.notifyFinished(chat, replyPreview, failed, sound = true) }
-            else if (!platform.inForeground() && s?.notifyReplies != false) platform.notifyFinished(chat, replyPreview, failed)
+            // An incognito chat announces only that a reply is there, never what it or the chat says.
+            val hidden = chat.uid.startsWith(app.pocketagent.data.INCOGNITO)
+            val shown = if (hidden) chat.copy(title = "Incognito chat") else chat
+            val words = if (hidden) "" else replyPreview
+            if (scheduler.wasScheduled(chat.id)) { if (s?.notifyTasks != false) platform.notifyFinished(shown, words, failed, sound = true) }
+            else if (!platform.inForeground() && s?.notifyReplies != false) platform.notifyFinished(shown, words, failed)
         }
         override fun approvalNeeded(chat: Chat, title: String) { if (!platform.inForeground()) platform.notifyApproval(chat, title) }
         override fun approvalResolved(chatId: Long) = platform.clearApprovalNotice(chatId)
@@ -220,6 +224,22 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         return dao.insert(Chat(createdAt = now, updatedAt = now, agent = agent, provider = provider.id, model = model, effort = s.effort, web = s.web, permission = s.permission))
     }
 
+    /**
+     * A chat that is kept out of everything: it is in no list, is never sent to linked devices, cannot be shared,
+     * writes no memory notes, and is deleted the moment the person moves on from it.
+     */
+    suspend fun newIncognitoChat(): Long {
+        val id = newChat()
+        val chat = dao.chat(id) ?: return id
+        db.dao().update(chat.copy(uid = app.pocketagent.data.INCOGNITO + java.util.UUID.randomUUID(), memory = false))
+        return id
+    }
+
+    /** The person has gone on to something else. An incognito chat does not outlive that. */
+    suspend fun leftChat(id: Long) {
+        if (db.dao().chat(id)?.let { it.uid.startsWith(app.pocketagent.data.INCOGNITO) } == true) deleteChat(id)
+    }
+
     suspend fun deleteChat(id: Long) {
         runs.stop(id)
         val paths = Regex("\"path\":\"(att/[^\"]+)\"")
@@ -242,6 +262,8 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
     /** Called once at start. */
     fun start() {
         scope.launch {
+            // An incognito chat that was open when the app was closed goes now.
+            db.dao().incognitoChats().forEach { deleteChat(it.id) }
             // Empty chats that were opened and never used are not worth keeping.
             db.dao().allChats().filter { it.title.isBlank() && it.updatedAt == it.createdAt }.forEach { c ->
                 if (db.dao().messages(c.id).isEmpty() && !runs.isRunning(c.id)) db.dao().deleteChat(c.id)

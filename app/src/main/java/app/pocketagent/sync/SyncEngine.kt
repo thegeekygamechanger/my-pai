@@ -18,6 +18,7 @@ import app.pocketagent.ai.bool
 import app.pocketagent.ai.long
 import app.pocketagent.ai.obj
 import app.pocketagent.ai.str
+import app.pocketagent.data.incognito
 import app.pocketagent.data.Change
 import app.pocketagent.data.Chat
 import app.pocketagent.data.Device
@@ -255,7 +256,7 @@ class SyncEngine(private val g: Graph) {
     )
 
     /** A chat that was opened and never used is not worth telling anyone about. */
-    private fun worthSending(c: Chat) = c.uid.isNotEmpty() && c.title.isNotBlank()
+    private fun worthSending(c: Chat) = c.uid.isNotEmpty() && c.title.isNotBlank() && !c.incognito
 
     private fun sendChat(c: Chat) { if (c.uid.isNotEmpty()) send({ put("t", "chat"); put("c", chatJson(c)) }) }
 
@@ -299,6 +300,7 @@ class SyncEngine(private val g: Graph) {
             is Change.ChatSaved -> raw.chat(change.id)?.takeIf(::worthSending)?.let(::sendChat)
             is Change.MsgSaved -> {
                 val chat = raw.chat(change.chatId) ?: return
+                if (chat.incognito) return
                 val msg = raw.messages(change.chatId).firstOrNull { it.id == change.id } ?: return
                 sendChat(chat)
                 sendMsg(chat, msg)

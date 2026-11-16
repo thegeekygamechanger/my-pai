@@ -8,6 +8,7 @@ Your personal AI. Chat with it, or hand it work and let it get on with it. For A
 
 - **Your own keys.** Claude, OpenAI, OpenRouter, Groq, Gemini, Mistral, DeepSeek, Together, Fireworks, Cerebras, xAI, NVIDIA, Hugging Face, or any OpenAI-compatible endpoint. Or no key at all: point it at Ollama and use models that run on your own computer. No account with us, no ads, no tracking.
 - **Chat and Work.** In Work mode the model works in steps with tools: files in a private workspace, memory notes, a task list, web search, GitHub and Gmail if you connect them, and (Claude models) a sandbox where it runs code to make and convert files: Markdown to PDF, a Word or Excel file, a chart or a diagram. What it makes there is saved into your workspace and shown in the chat. It asks before it changes anything.
+- **Incognito chat.** A chat that is in no history, is never synced or shared, and is erased when you leave it.
 - **Pictures and videos, with your own key.** With a Gemini, OpenAI or Pollinations key added, ask for a picture in any chat; short videos need a Gemini or Pollinations key. With none of those keys the feature is not shown at all.
 - **Keeps working.** Several chats and pieces of work can run at once and carry on when you switch apps.
 - **Scheduled tasks.** Have a chat or a piece of work run by itself at a set time.

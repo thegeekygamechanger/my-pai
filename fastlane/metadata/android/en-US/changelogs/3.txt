@@ -1,0 +1,1 @@
+New: Incognito chat (not in history, not synced, erased when you leave), a three-dot menu in every chat with Share and Incognito, filters in History, and an animated mark in the side menu.

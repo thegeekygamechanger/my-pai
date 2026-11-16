@@ -82,11 +82,15 @@ data class Stamp(val uid: String, val rev: Long)
 
 @Dao
 interface ChatDao {
-    @Query("SELECT * FROM chats ORDER BY pinned DESC, updatedAt DESC")
+    // Incognito chats are in no list and no search: they exist only while they are open.
+    @Query("SELECT * FROM chats WHERE uid NOT LIKE 'incognito-%' ORDER BY pinned DESC, updatedAt DESC")
     fun chats(): Flow<List<Chat>>
 
-    @Query("SELECT DISTINCT c.* FROM chats c LEFT JOIN messages m ON m.chatId = c.id AND m.role != 'note' WHERE c.title LIKE :q OR m.content LIKE :q ORDER BY c.pinned DESC, c.updatedAt DESC LIMIT 200")
+    @Query("SELECT DISTINCT c.* FROM chats c LEFT JOIN messages m ON m.chatId = c.id AND m.role != 'note' WHERE c.uid NOT LIKE 'incognito-%' AND (c.title LIKE :q OR m.content LIKE :q) ORDER BY c.pinned DESC, c.updatedAt DESC LIMIT 200")
     fun search(q: String): Flow<List<Chat>>
+
+    @Query("SELECT * FROM chats WHERE uid LIKE 'incognito-%'")
+    suspend fun incognitoChats(): List<Chat>
 
     @Query("SELECT * FROM chats WHERE id = :id")
     fun chatFlow(id: Long): Flow<Chat?>
@@ -146,6 +150,10 @@ interface ChatDao {
     @Query("DELETE FROM tombs") suspend fun clearTombs()
 }
 
+/** How an incognito chat is told apart: by the start of its id. Such a chat never leaves the device and is never listed. */
+const val INCOGNITO = "incognito-"
+val Chat.incognito: Boolean get() = uid.startsWith(INCOGNITO)
+
 @Database(entities = [Chat::class, Msg::class, Tomb::class], version = 1, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): ChatDao
@@ -190,16 +198,18 @@ class TrackedDao(val inner: ChatDao, private val onChange: (Change) -> Unit) : C
     override suspend fun deleteChat(id: Long) {
         val chat = inner.chat(id)
         inner.deleteChat(id)
-        if (chat != null && chat.uid.isNotEmpty()) { inner.putTomb(Tomb(chat.uid, "chat", now())); onChange(Change.Deleted(listOf(chat.uid), "chat")) }
+        // An incognito chat was never told to anyone, so there is no one to tell that it is gone.
+        if (chat != null && chat.uid.isNotEmpty() && !chat.incognito) { inner.putTomb(Tomb(chat.uid, "chat", now())); onChange(Change.Deleted(listOf(chat.uid), "chat")) }
     }
     override suspend fun deleteAllChats() {
-        val uids = inner.allChats().map { it.uid }.filter { it.isNotEmpty() }
+        val uids = inner.allChats().filter { !it.incognito }.map { it.uid }.filter { it.isNotEmpty() }
         inner.deleteAllChats()
         val at = now()
         uids.forEach { inner.putTomb(Tomb(it, "chat", at)) }
         if (uids.isNotEmpty()) onChange(Change.Deleted(uids, "chat"))
     }
     override suspend fun deleteFrom(chatId: Long, fromTime: Long) {
+        if (inner.chat(chatId)?.incognito == true) { inner.deleteFrom(chatId, fromTime); return }
         val uids = inner.uidsFrom(chatId, fromTime).filter { it.isNotEmpty() }
         inner.deleteFrom(chatId, fromTime)
         val at = now()

@@ -91,6 +91,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
@@ -98,6 +99,7 @@ import androidx.compose.ui.unit.dp
 import app.pocketagent.Host
 import app.pocketagent.LocalGraph
 import app.pocketagent.LocalWide
+import app.pocketagent.ui.theme.LocalMotion
 import app.pocketagent.ui.theme.PocketTheme
 import app.pocketagent.ui.theme.isDark
 import kotlinx.coroutines.launch
@@ -169,6 +171,8 @@ private fun Nav(host: Host) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
 
     fun go(s: Screen) {
+        // Moving on from a chat to another one ends it for good if it was incognito.
+        if (s is Screen.Chat) lastChat?.id?.takeIf { it != s.id }?.let { old -> g.scope.launch { g.leftChat(old) } }
         if (s is Screen.Chat) lastChat = s
         // The side panels fold away by themselves once you have gone somewhere.
         aboutOpen = false
@@ -177,6 +181,7 @@ private fun Nav(host: Host) {
     }
     val openChat: (Long) -> Unit = { id -> g.platform.clearFinishedNotice(id); go(Screen.Chat(id)) }
     val newChat: () -> Unit = { scope.launch { go(Screen.Chat(g.newChat())) } }
+    val incognitoChat: () -> Unit = { scope.launch { go(Screen.Chat(g.newIncognitoChat())) } }
     fun backToChat() { lastChat?.let { go(it) } ?: newChat() }
 
     // Straight into a fresh chat on opening.
@@ -237,7 +242,7 @@ private fun Nav(host: Host) {
                             label = "detail",
                         ) { s ->
                             when (s) {
-                                is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = null, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
+                                is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = null, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat, onIncognito = incognitoChat)
                                 Screen.Settings -> SettingsScreen(onBack = ::backToChat, onDoc = { kind -> go(Screen.Doc(kind)) })
                                 Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)
                                 Screen.Schedules -> SchedulesScreen(onBack = ::backToChat, onOpenChat = openChat)
@@ -293,7 +298,7 @@ private fun Nav(host: Host) {
                         label = "nav",
                     ) { s ->
                         when (s) {
-                            is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = openDrawer, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
+                            is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = openDrawer, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat, onIncognito = incognitoChat)
                             Screen.History -> HistoryScreen(onOpen = openChat, onMenu = openDrawer, onNew = newChat, selected = lastChat?.id)
                             Screen.Settings -> SettingsScreen(onBack = ::backToChat, onDoc = { kind -> go(Screen.Doc(kind)) })
                             Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)
@@ -304,6 +309,32 @@ private fun Nav(host: Host) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The app's mark, alive: its scalloped ground turns slowly while the spark on it stays upright and breathes.
+ * With motion switched off it simply sits still.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LivingMark(label: String?, onClick: (() -> Unit)?) {
+    val cs = MaterialTheme.colorScheme
+    val motion = LocalMotion.current
+    val turn: Float
+    val breath: Float
+    if (motion) {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "mark")
+        val a by t.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(22000, easing = androidx.compose.animation.core.LinearEasing)), label = "turn")
+        val b by t.animateFloat(0.86f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1900, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "breath")
+        turn = a; breath = b
+    } else { turn = 0f; breath = 1f }
+    Box(
+        Modifier.size(40.dp).graphicsLayer { rotationZ = turn }.clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = label, onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Rounded.AutoAwesome, label, Modifier.size(18.dp).graphicsLayer { rotationZ = -turn; scaleX = breath; scaleY = breath }, tint = cs.onPrimaryContainer)
     }
 }
 
@@ -326,14 +357,9 @@ private fun SideMenu(
     val listed = chats.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
     Column(modifier) {
         Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(40.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
-                    .then(if (onMark != null) Modifier.clickable(onClickLabel = "Collapse the side menu", onClick = onMark) else Modifier),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.AutoAwesome, if (onMark != null) "Collapse the side menu" else null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
-            }
-            Text("My PAI", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1)
+            LivingMark(if (onMark != null) "Collapse the side menu" else null, onMark)
+            // The name is set in the app's Helvetica, like a wordmark.
+            Text("My PAI", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge.copy(fontFamily = app.pocketagent.ui.theme.Heros, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified), maxLines = 1)
         }
         val item = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
         NavigationDrawerItem({ Text("New chat") }, false, onNew, item, icon = { Icon(Icons.Rounded.Add, null) })

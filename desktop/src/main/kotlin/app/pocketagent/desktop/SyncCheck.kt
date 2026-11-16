@@ -8,6 +8,7 @@ import app.pocketagent.sync.ShareClient
 import app.pocketagent.sync.ShareCode
 import app.pocketagent.sync.ShareHost
 import app.pocketagent.sync.SyncCode
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -112,6 +113,18 @@ fun main(args: Array<String>) {
         check("a chat deleted on A disappears on B", until { "Groceries" !in titles(b) })
         b.updateShared { it.copy(customInstructions = "Be thorough") }
         check("changed instructions reach A", until { a.settings.value?.customInstructions == "Be thorough" })
+
+        // --- Incognito: a chat that stays on the device it was written on, and is gone when it is left.
+        val secret = a.newIncognitoChat()
+        a.dao.rename(secret, "Secret plans")
+        a.dao.insert(Msg(chatId = secret, role = "user", content = text("only here"), createdAt = System.currentTimeMillis()))
+        chatWith(a, "After the secret", "user" to "hello")
+        check("an ordinary chat made after an incognito one arrives", until { "After the secret" in titles(b) })
+        check("the incognito chat was not sent", "Secret plans" !in titles(b))
+        check("it is not in its own device's list or search", a.dao.chats().first().none { it.title == "Secret plans" } && a.dao.search("%Secret plans%").first().isEmpty() && a.dao.search("%only here%").first().isEmpty())
+        a.leftChat(secret)
+        check("leaving it erases it", a.dao.chat(secret) == null && a.dao.messages(secret).isEmpty())
+        check("and nobody is told it ever existed", a.dao.tombs().none { it.kind == "chat" && it.uid.startsWith("incognito-") })
 
         // --- Catching up after being away.
         b.sync.leave()
