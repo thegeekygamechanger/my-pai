@@ -117,6 +117,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -159,6 +160,7 @@ import app.pocketagent.data.AttachmentError
 import app.pocketagent.data.Chat
 import app.pocketagent.data.Picked
 import app.pocketagent.LocalGraph
+import app.pocketagent.ui.theme.LocalDark
 import app.pocketagent.LocalWide
 import app.pocketagent.Speech
 import app.pocketagent.ai.Providers
@@ -241,12 +243,19 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     // The view follows the newest content (the reply as it arrives, new tool steps) for as long as the
     // person has not scrolled up to read something older. Sending a message always brings it back down.
     var follow by remember { mutableStateOf(true) }
+    // Following stops only when the person scrolls away themselves (see the list below), and starts again when they
+    // come back to the bottom. The list's own movements while a reply arrives never switch it off.
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            if (!scrolling) {
-                val bottom = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 80
-                // While the screen is being held for reading, only the chip (or sending a message) lets it move again.
-                follow = bottom && held0 == null
+            if (!scrolling && listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 80) follow = true
+        }
+    }
+    val readingBack = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): Offset {
+                // A drag or a turn of the wheel towards older text: the person wants to read, so the view stops following.
+                if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y > 1f) follow = false
+                return Offset.Zero
             }
         }
     }
@@ -405,14 +414,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                 Box(Modifier.widthIn(max = 860.dp).fillMaxSize()) {
                     if (rows.isEmpty() && chat != null) EmptyChat(chatId, chat!!.agent) { input = it; send() }
                     else LazyColumn(
-                        Modifier.fillMaxSize().pointerInput(run != null) {
-                            // Watches for a finger going down without taking the touch away from the list or its buttons.
-                            if (run != null) awaitEachGesture {
-                                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                if (held0 == null) held0 = latestRows
-                                follow = false
-                            }
-                        },
+                        Modifier.fillMaxSize().nestedScroll(readingBack),
                         state = listState, reverseLayout = true, contentPadding = PaddingValues(top = 8.dp, bottom = 10.dp),
                     ) {
                         items(reversed, key = { it.key }, contentType = { it::class }) { row ->
@@ -617,15 +619,17 @@ private fun Composer(
     } else -1f
     val edge by animateFloatAsState(if (running) 1f else 0f, tween(450), label = "edge")
     val c1 = cs.primary; val c2 = cs.tertiary; val c3 = cs.secondary
+    // A rounded bar of frosted colour, so the chat's colours show through instead of a dark slab across the screen.
     Surface(
-        shape = RoundedCornerShape(28.dp), color = cs.surfaceContainerHigh,
+        shape = RoundedCornerShape(34.dp), color = cs.surfaceContainerHigh.copy(alpha = if (LocalDark.current) 0.42f else 0.62f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, cs.onSurface.copy(alpha = 0.10f)),
         modifier = Modifier.fillMaxWidth().drawWithContent {
             drawContent()
             if (edge > 0f) {
                 val w = size.width
                 val shift = if (glow < 0f) 0f else glow * w * 2f
                 val brush = Brush.linearGradient(listOf(c1, c2, c3, c1), start = Offset(shift - w, 0f), end = Offset(shift, size.height), tileMode = TileMode.Mirror)
-                drawRoundRect(brush, cornerRadius = CornerRadius(28.dp.toPx()), style = Stroke(2.dp.toPx()), alpha = edge * 0.9f)
+                drawRoundRect(brush, cornerRadius = CornerRadius(34.dp.toPx()), style = Stroke(2.dp.toPx()), alpha = edge * 0.9f)
             }
         },
     ) {

@@ -50,18 +50,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pocketagent.ui.theme.LocalCodeColors
 import kotlinx.coroutines.delay
 
-/** Inline Markdown as styled text. [fadeTail] softens the last few characters of text that is still arriving. */
+/**
+ * Inline Markdown as styled text. With [fadeTail], for text that is still arriving, the words are not shown
+ * the instant they land: a soft edge sweeps along the line at an even pace and the text fades in behind it,
+ * so a reply seems to be written out rather than to jump forward in bursts.
+ */
 @Composable
 fun inlineText(text: String, fadeTail: Boolean = false): AnnotatedString {
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBg = MaterialTheme.colorScheme.surfaceContainerHighest
     val base = MaterialTheme.colorScheme.onSurface
-    return remember(text, fadeTail, linkColor, codeBg, base) {
+    val built = remember(text, linkColor, codeBg) {
         buildAnnotatedString {
             for (sp in Inline.parse(text)) {
                 val style = SpanStyle(
@@ -78,19 +85,49 @@ fun inlineText(text: String, fadeTail: Boolean = false): AnnotatedString {
                     }
                 } else withStyle(style) { append(sp.text) }
             }
-            if (fadeTail && length > 0) {
-                // The newest characters ease in instead of popping: four steps from faint to full.
-                val steps = 4
-                val per = 3
-                for (k in 0 until steps) {
-                    val end = length - k * per
-                    val start = (end - per).coerceAtLeast(0)
-                    if (end <= 0) break
-                    addStyle(SpanStyle(color = base.copy(alpha = 0.25f + 0.2f * k)), start, end)
-                }
-            }
         }
     }
+    if (!fadeTail) return built
+    val shown = revealed(built.length)
+    return remember(built, shown, base) {
+        if (shown >= built.length + REVEAL_EDGE) built else buildAnnotatedString {
+            append(built)
+            // Behind the edge the text is at full strength; across the edge it fades; ahead of it, it is not there yet.
+            val steps = 8
+            val per = REVEAL_EDGE / steps
+            for (k in 0 until steps) {
+                val end = (shown - k * per).coerceIn(0, length)
+                val start = (shown - (k + 1) * per).coerceIn(0, length)
+                if (end > start) addStyle(SpanStyle(color = base.copy(alpha = (k + 0.5f) / steps)), start, end)
+            }
+            val from = shown.coerceIn(0, length)
+            if (from < length) addStyle(SpanStyle(color = Color.Transparent, background = Color.Transparent), from, length)
+        }
+    }
+}
+
+private const val REVEAL_EDGE = 16
+
+/**
+ * How many characters of a growing text to show, counted past the fading edge. It runs after the real length:
+ * steadily when it is close, faster when a burst has put it far behind, so it never lags by more than a moment.
+ */
+@Composable
+private fun revealed(length: Int): Int {
+    val target by rememberUpdatedState(length + REVEAL_EDGE)
+    var at by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = withFrameNanos { it }
+        while (true) {
+            val now = withFrameNanos { it }
+            val dt = ((now - last) / 1e9f).coerceIn(0f, 0.1f)
+            last = now
+            val behind = target - at
+            if (behind > 0f) at = (at + dt * maxOf(90f, behind * 7f)).coerceAtMost(target.toFloat())
+            else if (behind < 0f) at = target.toFloat()
+        }
+    }
+    return at.toInt()
 }
 
 @Composable

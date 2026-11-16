@@ -100,6 +100,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -423,13 +434,50 @@ fun StatusRow(row: UiRow.Status, modifier: Modifier) {
             phrase = pool.filter { it != phrase }.random()
         }
     }
+    val motion = LocalMotion.current
     Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        LoadingIndicator(Modifier.size(30.dp), color = if (row.retrying) cs.tertiary else cs.primary)
+        ThinkingSpark(Modifier.size(26.dp), retrying = row.retrying)
+        // A band of light passes along the words, the way a thought seems to move.
+        val sweep = if (motion) {
+            val t = rememberInfiniteTransition(label = "shimmer")
+            val v by t.animateFloat(-0.4f, 1.4f, infiniteRepeatable(tween(1700, easing = LinearEasing)), label = "shimmer")
+            v
+        } else -1f
         AnimatedContent(
             if (row.retrying || row.text.isNotBlank()) row.text else phrase, Modifier.padding(start = 10.dp),
             transitionSpec = { (slideInVertically(spring(dampingRatio = 0.8f, stiffness = 380f)) { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut()) }, label = "phrase",
-        ) { words -> Text(words, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant) }
+        ) { words ->
+            val dim = cs.onSurfaceVariant.copy(alpha = 0.72f)
+            val style = if (sweep < -0.5f) MaterialTheme.typography.bodyMedium.copy(color = cs.onSurfaceVariant)
+            else MaterialTheme.typography.bodyMedium.copy(brush = Brush.linearGradient(
+                0f to dim, (sweep - 0.18f).coerceIn(0f, 1f) to dim, sweep.coerceIn(0f, 1f) to cs.primary, (sweep + 0.18f).coerceIn(0f, 1f) to dim, 1f to dim,
+                start = Offset(0f, 0f), end = Offset(520f, 0f),
+            ))
+            Text(words, style = style)
+        }
     }
+}
+
+/** The mark shown while a reply is on its way: the app's spark, filled with slowly turning colour and gently breathing. */
+@Composable
+private fun ThinkingSpark(modifier: Modifier, retrying: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val colors = if (retrying) listOf(cs.tertiary, cs.error, cs.tertiary) else listOf(cs.primary, Color(0xFFC98BFF), Color(0xFFFF9E80), Color(0xFFFFC978), cs.primary)
+    if (!LocalMotion.current) { Icon(Icons.Rounded.AutoAwesome, null, modifier, tint = colors.first()); return }
+    val t = rememberInfiniteTransition(label = "spark")
+    val turn by t.animateFloat(0f, 360f, infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "turn")
+    val breath by t.animateFloat(0.84f, 1.1f, infiniteRepeatable(tween(850, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "breath")
+    Icon(
+        Icons.Rounded.AutoAwesome, null,
+        modifier
+            .graphicsLayer { scaleX = breath; scaleY = breath; rotationZ = (breath - 0.84f) * 46f; compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                // The colours are painted only where the spark already is, and turned a little further on every frame.
+                rotate(turn) { drawCircle(Brush.sweepGradient(colors), radius = size.maxDimension, blendMode = BlendMode.SrcAtop) }
+            },
+        tint = Color.White,
+    )
 }
 
 /** What the waiting line says, by what is going on. Plain phrases that say something, rather than "Working". */

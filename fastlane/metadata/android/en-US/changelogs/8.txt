@@ -1,0 +1,1 @@
+Replies always show by themselves; the arrow only appears if you scroll up. The message bar is lighter and fully rounded.
