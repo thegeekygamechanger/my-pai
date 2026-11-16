@@ -56,6 +56,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -212,8 +214,7 @@ private fun Nav(host: Host) {
                                 NavItem(Icons.Rounded.FolderOpen, "Files", screen == Screen.Workspace) { if (screen == Screen.Workspace) backToChat() else go(Screen.Workspace) }
                                 NavItem(Icons.Rounded.Schedule, "Tasks", screen == Screen.Schedules) { if (screen == Screen.Schedules) backToChat() else go(Screen.Schedules) }
                                 Spacer(Modifier.weight(1f))
-                                NavItem(Icons.Rounded.Info, "About", aboutOpen || screen is Screen.Doc) { aboutOpen = !aboutOpen; if (aboutOpen) historyOpen = false }
-                                NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
+                                NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings || screen is Screen.Doc) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
                                 Text("v" + g.platform.versionName, style = MaterialTheme.typography.labelSmall, color = cs.outline)
                             }
                         }
@@ -221,14 +222,6 @@ private fun Nav(host: Host) {
                     AnimatedVisibility(historyOpen, enter = expandHorizontally(spring(dampingRatio = 0.85f, stiffness = 380f)) + fadeIn(), exit = shrinkHorizontally(spring(stiffness = 500f)) + fadeOut()) {
                         Box(Modifier.width(if (total >= 1280.dp) 360.dp else 300.dp).fillMaxHeight()) {
                             HistoryScreen(onOpen = openChat, onMenu = null, onNew = newChat, selected = (screen as? Screen.Chat)?.id)
-                        }
-                    }
-                    AnimatedVisibility(aboutOpen, enter = expandHorizontally(spring(dampingRatio = 0.85f, stiffness = 380f)) + fadeIn(), exit = shrinkHorizontally(spring(stiffness = 500f)) + fadeOut()) {
-                        Column(Modifier.width(260.dp).fillMaxHeight().statusBarsPadding().padding(top = 18.dp, end = 10.dp)) {
-                            Text("About", Modifier.padding(start = 16.dp, bottom = 10.dp), style = MaterialTheme.typography.titleLarge)
-                            docs.forEach { (kind, icon) ->
-                                NavigationDrawerItem({ Text(Docs.title(kind)) }, (screen as? Screen.Doc)?.kind == kind, { go(Screen.Doc(kind)) }, Modifier.padding(vertical = 2.dp), icon = { Icon(icon, null) })
-                            }
                         }
                     }
                     Box(Modifier.weight(1f).fillMaxHeight().padding(top = 10.dp, end = 10.dp, bottom = 10.dp).clip(RoundedCornerShape(28.dp)).background(cs.surface)) {
@@ -239,11 +232,11 @@ private fun Nav(host: Host) {
                         ) { s ->
                             when (s) {
                                 is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = null, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
-                                Screen.Settings -> SettingsScreen(onBack = ::backToChat)
+                                Screen.Settings -> SettingsScreen(onBack = ::backToChat, onDoc = { kind -> go(Screen.Doc(kind)) })
                                 Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)
                                 Screen.Schedules -> SchedulesScreen(onBack = ::backToChat, onOpenChat = openChat)
                                 Screen.History -> HistoryScreen(onOpen = openChat, onMenu = null, onNew = newChat, selected = null)
-                                is Screen.Doc -> DocScreen(s.kind, onBack = ::backToChat)
+                                is Screen.Doc -> DocScreen(s.kind, onBack = { go(Screen.Settings) })
                             }
                         }
                     }
@@ -258,10 +251,12 @@ private fun Nav(host: Host) {
                 ModalNavigationDrawer(
                     drawerState = drawer,
                     drawerContent = {
-                        ModalDrawerSheet(Modifier.width(300.dp), drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp)) {
-                          Box {
+                        // The sheet itself takes no room for the status and navigation bars, so its colours run from the very top to
+                        // the very bottom; the menu's contents keep clear of the bars instead.
+                        ModalDrawerSheet(Modifier.width(300.dp), drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp), windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)) {
+                          Box(Modifier.fillMaxSize()) {
                             AppBackdrop(Modifier.matchParentSize())
-                            Column(Modifier.fillMaxSize()) {
+                            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                             Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(40.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
                                     Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(18.dp), tint = cs.onPrimaryContainer)
@@ -273,19 +268,18 @@ private fun Nav(host: Host) {
                             NavigationDrawerItem({ Text("History") }, screen == Screen.History, { pick(Screen.History) }, item, icon = { Icon(Icons.Rounded.History, null) })
                             NavigationDrawerItem({ Text("Workspace files") }, screen == Screen.Workspace, { pick(Screen.Workspace) }, item, icon = { Icon(Icons.Rounded.FolderOpen, null) })
                             NavigationDrawerItem({ Text("Scheduled tasks") }, screen == Screen.Schedules, { pick(Screen.Schedules) }, item, icon = { Icon(Icons.Rounded.Schedule, null) })
-                            NavigationDrawerItem({ Text("Settings") }, screen == Screen.Settings, { pick(Screen.Settings) }, item, icon = { Icon(Icons.Rounded.Settings, null) })
-                            // Terms, privacy and licences sit behind one line that opens downward.
-                            val turn by animateFloatAsState(if (aboutOpen) 180f else 0f, spring(dampingRatio = 0.7f, stiffness = 400f), label = "about")
-                            NavigationDrawerItem({ Text("About") }, false, { aboutOpen = !aboutOpen }, item, icon = { Icon(Icons.Rounded.Info, null) }, badge = { Icon(Icons.Rounded.ExpandMore, if (aboutOpen) "Close" else "Open", Modifier.rotate(turn)) })
-                            AnimatedVisibility(aboutOpen, enter = expandVertically(spring(dampingRatio = 0.85f, stiffness = 380f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                                Column {
-                                    docs.forEach { (kind, icon) ->
-                                        NavigationDrawerItem({ Text(Docs.title(kind)) }, (screen as? Screen.Doc)?.kind == kind, { pick(Screen.Doc(kind)) }, Modifier.padding(start = 28.dp, end = 12.dp, top = 2.dp, bottom = 2.dp), icon = { Icon(icon, null) })
+                            Spacer(Modifier.weight(1f))
+                            // The foot of the menu: the version on one side, Settings on the other. Terms, privacy and licences are inside Settings.
+                            Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 16.dp, top = 12.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("Pocket Agent " + g.platform.versionName, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = cs.outline)
+                                val inSettings = screen == Screen.Settings || screen is Screen.Doc
+                                androidx.compose.material3.Surface(onClick = { pick(Screen.Settings) }, shape = androidx.compose.foundation.shape.CircleShape, color = if (inSettings) cs.secondaryContainer else cs.surface.copy(alpha = 0.55f), contentColor = if (inSettings) cs.onSecondaryContainer else cs.onSurface) {
+                                    Row(Modifier.padding(start = 14.dp, end = 18.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.Settings, null, Modifier.size(20.dp))
+                                        Text("Settings", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
                             }
-                            Spacer(Modifier.weight(1f))
-                            Text("Pocket Agent " + g.platform.versionName, Modifier.padding(start = 28.dp, bottom = 20.dp, top = 12.dp), style = MaterialTheme.typography.labelMedium, color = cs.outline)
                             }
                           }
                         }
@@ -313,10 +307,10 @@ private fun Nav(host: Host) {
                         when (s) {
                             is Screen.Chat -> ChatScreen(s.id, s.text, onMenu = openDrawer, onNew = newChat, onWorkspace = { go(Screen.Workspace) }, onDeleted = newChat, onOpenChat = openChat)
                             Screen.History -> HistoryScreen(onOpen = openChat, onMenu = openDrawer, onNew = newChat, selected = lastChat?.id)
-                            Screen.Settings -> SettingsScreen(onBack = ::backToChat)
+                            Screen.Settings -> SettingsScreen(onBack = ::backToChat, onDoc = { kind -> go(Screen.Doc(kind)) })
                             Screen.Workspace -> WorkspaceScreen(onBack = ::backToChat)
                             Screen.Schedules -> SchedulesScreen(onBack = ::backToChat, onOpenChat = openChat)
-                            is Screen.Doc -> DocScreen(s.kind, onBack = ::backToChat)
+                            is Screen.Doc -> DocScreen(s.kind, onBack = { go(Screen.Settings) })
                         }
                     }
                 }

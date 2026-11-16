@@ -1,0 +1,1 @@
+Settings sits at the foot of the side menu beside the version; Terms, Privacy and Open source are inside Settings. The menu's colours cover the whole height of the screen.

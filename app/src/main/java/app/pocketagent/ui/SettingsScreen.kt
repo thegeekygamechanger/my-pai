@@ -81,6 +81,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -111,6 +114,26 @@ private fun Group(label: String, content: @Composable ColumnScope.() -> Unit) {
     if (LocalOpen.current.value.isNotEmpty()) { Column(content = content); return }
     Text(label.uppercase(), Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp), style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp), color = cs.onSurfaceVariant)
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
+}
+
+/** A row of a group that leads somewhere else in the app, such as a page of terms, instead of to a section of Settings. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LinkRow(title: String, icon: ImageVector, summary: String = "", onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    if (LocalOpen.current.value.isNotEmpty()) return
+    Surface(onClick = onClick, shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (summary.isNotEmpty()) Text(summary, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open $title", tint = cs.onSurfaceVariant)
+        }
+    }
 }
 
 /** A tile of a group that holds a control directly, such as the theme switch, instead of leading to a page. */
@@ -202,7 +225,7 @@ private fun AddServiceDialog(initial: Provider?, exclude: Set<String>, onDismiss
 }
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
     val g = LocalGraph.current
     val platform = g.platform
     val scope = rememberCoroutineScope()
@@ -378,6 +401,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                         }
                         if (note.isNotEmpty()) Text(note, Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
+                    LinkRow(Docs.title(Docs.TERMS), Icons.Rounded.Gavel) { onDoc(Docs.TERMS) }
+                    LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
+                    LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
                 }
                 if (open.value.isEmpty()) Text("Pocket Agent ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
             }
