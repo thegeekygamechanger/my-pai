@@ -52,7 +52,7 @@ fun ConnectionsSection() {
     val githubOn = remember(settings?.sharedRev) { g.integrations.githubOn() }
     val gmailOn = remember(settings?.sharedRev) { g.integrations.gmailOn() }
 
-    Text("In Work mode the assistant can use these. It always asks before it sends an email or changes anything on GitHub.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    Text("The assistant can use these in any chat: type @github or @gmail, or just ask. It always asks before it sends an email or changes anything on GitHub.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
 
     // GitHub
     var token by remember { mutableStateOf("") }

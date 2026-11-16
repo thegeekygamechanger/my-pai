@@ -232,6 +232,8 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
             val r = rows[i]
             // A picture or video that was made is shown by itself; the making of it is not.
             if (r is UiRow.Tool && (r.name == Media.IMAGE || r.name == Media.VIDEO)) { if (r.media.isNotEmpty() || (show && r.state == ToolState.ERROR)) out += r; i++; continue }
+            // Looking something up in a connected account is background too; a change there is asked about and stays in view.
+            if (!show && r is UiRow.Tool && r.state != ToolState.WAITING && (r.name == "gmail_search" || r.name == "gmail_read" || (r.name == "github" && r.title.startsWith("GitHub: GET")))) { i++; continue }
             if (!(r is UiRow.Thinking || (r is UiRow.Tool && r.server))) { out += r; i++; continue }
             var j = i
             while (j < rows.size && rows[j].let { it is UiRow.Thinking || (it is UiRow.Tool && it.server) }) j++

@@ -39,6 +39,8 @@ object AutoModel {
         // Work means tools and several steps: never the quick model, and the strongest unless the request is small.
         if (agent) return if (t.length < 80 && !DEMANDING.containsMatchIn(t) && attachments == 0) NORMAL else HARD
         if (isGreeting(t)) return EASY
+        // A request for a connected account means tool calls and reading what comes back: not a job for the quick model.
+        val account = t.startsWith("@github") || t.startsWith("@gmail")
         var score = 0
         if (t.length > 1500) score += 2 else if (t.length > 400) score += 1
         if (CODE.containsMatchIn(t)) score += 1
@@ -48,6 +50,7 @@ object AutoModel {
         if (t.length < 200 && QUICK.containsMatchIn(t)) score -= 1
         return when {
             score >= 2 -> HARD
+            account -> NORMAL
             score < 0 || (score == 0 && t.length < 60) -> EASY
             else -> NORMAL
         }

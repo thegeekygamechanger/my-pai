@@ -41,6 +41,7 @@ body[data-device="desktop"] .android, body[data-device="android"] .desktop { dis
 
 .feature { display:grid; grid-template-columns: 1fr 1.5fr; gap: 48px; align-items:center; padding: 64px 0; border-top:1px solid var(--line); }
 .feature.flip > div { order:2; }
+.feature.flip { grid-template-columns: 1.5fr 1fr; }
 .feature h2 { font-size: clamp(30px, 4.4vw, 44px); margin-bottom: 14px; }
 .feature p { color:var(--soft); font-size: 18px; margin:0; max-width: 22em; }
 body[data-device="android"] .feature { grid-template-columns: 1.2fr 1fr; }

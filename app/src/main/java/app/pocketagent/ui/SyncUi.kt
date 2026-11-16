@@ -185,8 +185,8 @@ fun ShareChatDialog(chatId: Long, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     // A code works for a few minutes; "New code" starts again with a fresh one.
     var round by remember { mutableStateOf(0) }
-    val host = remember(chatId, round) { ShareHost(g, chatId).also { it.start() } }
-    DisposableEffect(host) { onDispose { scope.launch { host.stop() } } }
+    // The share belongs to the app, not to this window: closing the window to send the code does not end it.
+    val host = remember(chatId, round) { g.share(chatId, fresh = round > 0) }
     // Copied at once, ready to paste into a message to the other person.
     val shareText = remember(host) { ShareCode.text(host.code) }
     LaunchedEffect(host) { g.platform.copyToClipboard(shareText) }
@@ -206,8 +206,8 @@ fun ShareChatDialog(chatId: Long, onDismiss: () -> Unit) {
                 Text(
                     when {
                         expired -> "This code has stopped working. Make a new one to share again."
-                        served == 0 -> "Copied. Send it to the other person: when they paste it into Pocket Agent's message box, this chat opens for them, and only this chat. Keep this open until they have it."
-                        else -> "Sent $served time${if (served == 1) "" else "s"}. You can close this now."
+                        served == 0 -> "Copied. Send it to the other person: when they enter it in Pocket Agent's message box, this chat opens for them, and only this chat. The code works for ten minutes while Pocket Agent is open on this device."
+                        else -> "Opened $served time${if (served == 1) "" else "s"}."
                     },
                     Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 )

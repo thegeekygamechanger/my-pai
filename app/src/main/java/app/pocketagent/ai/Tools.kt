@@ -82,9 +82,12 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
     private val byName = specs.associateBy { it.name }
 
     /** Tool definitions for the request, in a fixed order so the cached prefix stays identical. */
-    /** @param mediaOnly just the picture and video tools, which an ordinary chat has too; everything else belongs to Work */
+    /**
+     * @param mediaOnly the tools an ordinary chat has too: the connected accounts (GitHub, Gmail) and making pictures
+     *   and videos. Files, memory and the task list belong to Work.
+     */
     fun definitions(eager: Boolean, mediaOnly: Boolean = false): JsonArray = buildJsonArray {
-        for (s in (if (mediaOnly) emptyList() else specs + integrations?.specs().orEmpty()) + media?.specs().orEmpty()) add(buildJsonObject {
+        for (s in (if (mediaOnly) emptyList() else specs) + integrations?.specs().orEmpty() + media?.specs().orEmpty()) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
             if (eager) put("eager_input_streaming", true)

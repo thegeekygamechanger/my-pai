@@ -93,7 +93,7 @@ A scheduled task starts a chat by itself at the time you set, on the device wher
 Sync is off until you turn it on. When it is on, your devices send each other your chats, files, settings and keys through a relay server. Everything is encrypted on the device with a key made from your pairing code, which never goes to the relay, so the relay cannot read any of it. The relay keeps nothing: no database, no files, no message log. It only passes each message to your other devices that are connected at that moment. Anyone who has your pairing code can read your synced data, so show it only to your own devices.
 
 ## Sharing a chat
-When you share a chat with a code, that one chat is sent, encrypted with a key made for that hand-over, to whoever enters the code while your share screen is open. A code works for ten minutes. Anyone who has the code in that time can open the chat, so send it only to the person you mean. They receive a copy of that chat and the name you entered in the app, so they can see who it is from; nothing else.
+When you share a chat with a code, that one chat is sent, encrypted with a key made for that hand-over, to whoever enters the code in the ten minutes it works for, while the app is open on your device. Anyone who has the code in that time can open the chat, so send it only to the person you mean. They receive a copy of that chat and the name you entered in the app, so they can see who it is from; nothing else.
 
 ## Deleting your data
 Delete a chat from History, or everything from Settings, Data. Removing the app removes all of it from the device. To remove a key from an AI service itself, revoke it in that service's dashboard.

@@ -184,6 +184,7 @@ private fun Nav(host: Host) {
         go(Screen.Chat(g.newChat(), text))
     }
 
+    var railOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     val screen = current ?: return
 
     BoxWithConstraints(Modifier.fillMaxSize().background(cs.surfaceContainerLowest)) {
@@ -195,17 +196,27 @@ private fun Nav(host: Host) {
                 OnBack(screen !is Screen.Chat) { backToChat() }
                 Row(Modifier.fillMaxSize()) {
                     // The rail.
-                    Column(Modifier.width(84.dp).fillMaxHeight().statusBarsPadding().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.padding(bottom = 10.dp).size(44.dp).background(cs.primaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(20.dp), tint = cs.onPrimaryContainer)
+                    // Tapping the app's mark folds the rail away to just the mark, and opens it again.
+                    val railWidth by androidx.compose.animation.core.animateDpAsState(if (railOpen) 84.dp else 68.dp, spring(dampingRatio = 0.85f, stiffness = 380f), label = "rail")
+                    Column(Modifier.width(railWidth).fillMaxHeight().statusBarsPadding().padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.padding(bottom = 16.dp).size(44.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
+                                .clickable(onClickLabel = if (railOpen) "Collapse the side menu" else "Open the side menu") { railOpen = !railOpen; if (!railOpen) { historyOpen = false; aboutOpen = false } },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.AutoAwesome, if (railOpen) "Collapse the side menu" else "Open the side menu", Modifier.size(20.dp), tint = cs.onPrimaryContainer)
                         }
-                        NavItem(Icons.Rounded.History, "History", historyOpen) { historyOpen = !historyOpen; aboutOpen = false }
-                        NavItem(Icons.Rounded.FolderOpen, "Files", screen == Screen.Workspace) { if (screen == Screen.Workspace) backToChat() else go(Screen.Workspace) }
-                        NavItem(Icons.Rounded.Schedule, "Tasks", screen == Screen.Schedules) { if (screen == Screen.Schedules) backToChat() else go(Screen.Schedules) }
-                        Spacer(Modifier.weight(1f))
-                        NavItem(Icons.Rounded.Info, "About", aboutOpen || screen is Screen.Doc) { aboutOpen = !aboutOpen; if (aboutOpen) historyOpen = false }
-                        NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
-                        Text("v" + g.platform.versionName, style = MaterialTheme.typography.labelSmall, color = cs.outline)
+                        AnimatedVisibility(railOpen, Modifier.weight(1f), enter = fadeIn() + androidx.compose.animation.expandVertically(spring(dampingRatio = 0.85f, stiffness = 380f)), exit = fadeOut() + androidx.compose.animation.shrinkVertically(spring(stiffness = 500f))) {
+                            Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                NavItem(Icons.Rounded.History, "History", historyOpen) { historyOpen = !historyOpen; aboutOpen = false }
+                                NavItem(Icons.Rounded.FolderOpen, "Files", screen == Screen.Workspace) { if (screen == Screen.Workspace) backToChat() else go(Screen.Workspace) }
+                                NavItem(Icons.Rounded.Schedule, "Tasks", screen == Screen.Schedules) { if (screen == Screen.Schedules) backToChat() else go(Screen.Schedules) }
+                                Spacer(Modifier.weight(1f))
+                                NavItem(Icons.Rounded.Info, "About", aboutOpen || screen is Screen.Doc) { aboutOpen = !aboutOpen; if (aboutOpen) historyOpen = false }
+                                NavItem(Icons.Rounded.Settings, "Settings", screen == Screen.Settings) { if (screen == Screen.Settings) backToChat() else go(Screen.Settings) }
+                                Text("v" + g.platform.versionName, style = MaterialTheme.typography.labelSmall, color = cs.outline)
+                            }
+                        }
                     }
                     AnimatedVisibility(historyOpen, enter = expandHorizontally(spring(dampingRatio = 0.85f, stiffness = 380f)) + fadeIn(), exit = shrinkHorizontally(spring(stiffness = 500f)) + fadeOut()) {
                         Box(Modifier.width(if (total >= 1280.dp) 360.dp else 300.dp).fillMaxHeight()) {

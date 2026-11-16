@@ -48,6 +48,7 @@ class LiveTest {
             override fun provider(id: String) = app.pocketagent.ai.Providers.PRESETS.firstOrNull { it.id == id }
             override fun key(providerId: String): String? = key
             override fun modelInfo(id: String) = models.firstOrNull { it.id == id }
+            override fun models(providerId: String) = models
             override fun attachment(path: String): ByteArray? = image
             override fun runsChanged(active: Boolean) {}
             override fun finished(chat: Chat, replyPreview: String, failed: Boolean) {}
@@ -132,6 +133,23 @@ class LiveTest {
             await(fast)
             report("fast claude-opus-5-5", fast)
         }
+        // 7. A vague question in a chat left on Auto, with web search on as it is by default: the quick model,
+        // a few searches at most, no detour through the code sandbox, and a real answer without a long wait.
+        val vague = chat(app.pocketagent.ai.AutoModel.ID, web = true, effort = "medium")
+        val began = System.currentTimeMillis()
+        runs.send(vague, text("what update today"))
+        await(vague)
+        val answer = report("vague question on Auto", vague)
+        val seconds = (System.currentTimeMillis() - began) / 1000
+        val blocks = dao.messages(vague).filter { it.role == "assistant" }.flatMap { m -> parseArray(m.content).map { it as JsonObject } }
+        val searches = blocks.count { it.str("type") == "server_tool_use" && it.str("name") == "web_search" }
+        val usedModel = dao.messages(vague).last { it.role == "assistant" }.model
+        println("LIVE vague | ${seconds}s searches=$searches model=$usedModel reply=${answer.take(400)}")
+        assertTrue("took ${seconds}s", seconds < 90)
+        assertTrue("searched $searches times", searches <= 3)
+        assertTrue("ran code along the way", blocks.none { it.str("type").orEmpty().contains("code_execution") })
+        assertTrue("Auto picked $usedModel", usedModel.contains("haiku"))
+
         println("LIVE done | rejected extras this session: ${runs.rejectedFeatures()}")
     }
 }

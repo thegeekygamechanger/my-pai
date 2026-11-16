@@ -292,23 +292,34 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     var incoming by remember { mutableStateOf<SharedChat?>(null) }
     var fetching by remember { mutableStateOf(false) }
     var pastedWhole by remember { mutableStateOf(false) }
+    // A code nobody answered for: the code, and the text it came from in case the person meant it as a message.
+    var notFound by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Set while a message is sent on purpose although it looks like a share code.
+    var plain by remember { mutableStateOf(false) }
+    fun openShared(code: String, original: String) {
+        if (fetching) return
+        fetching = true
+        // In the screen's own scope: clearing the message box must not cut the fetch short.
+        scope.launch {
+            val got = try { ShareClient.fetch(g, code) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null } finally { fetching = false }
+            if (got == null) notFound = code to original else incoming = got
+        }
+    }
     LaunchedEffect(input) {
+        if (plain) return@LaunchedEffect
         // Either the labelled form anywhere in the text, or the bare four characters pasted into an empty box.
         val hit = ShareCode.find(input)
         val code = hit?.groupValues?.get(1)?.uppercase() ?: ShareCode.parse(input).takeIf { pastedWhole } ?: return@LaunchedEffect
+        val original = input
         input = if (hit != null) input.replace(hit.value, "").trim() else ""
-        if (fetching) return@LaunchedEffect
-        fetching = true
-        // Clearing the box restarts this effect, so the fetch runs in the screen's own scope and is not cut short.
-        scope.launch {
-            val got = try { ShareClient.fetch(g, code) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null } finally { fetching = false }
-            if (got == null) snack.showSnackbar("Could not reach the device sharing that chat. Ask them to keep the share window open, then paste the code again.") else incoming = got
-        }
+        openShared(code, original)
     }
     fun send() {
         val c = chat ?: return
         val text = input.trim()
         if (run != null || (text.isEmpty() && picked.isEmpty() && mentions.isEmpty())) return
+        // A message that is nothing but a share code, typed or pasted, opens the shared chat instead of being sent.
+        if (!plain && editing == null && picked.isEmpty() && mentions.isEmpty()) ShareCode.parse(text)?.let { code -> input = ""; openShared(code, text); return }
         if (g.keyFor(c.provider) == null) { scope.launch { snack.showSnackbar("Add a key for ${g.provider(c.provider)?.name ?: "this service"} in Settings, or pick another model.") }; return }
         if (c.model.isBlank()) { showControls = true; return }
         val blocks = ArrayList<JsonObject>()
@@ -321,15 +332,21 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         }
         picked.forEach { blocks += it.block }
         // "@GitHub owner/repo" and "@Gmail" go at the top of the message, as lines the model is told how to read.
+        // "@github", "@gmail" or "@mail" typed out by hand counts the same as picking the account from the list.
+        var typed = text
+        for ((name, words) in listOf("GitHub" to "github|git", "Gmail" to "gmail|mail|email")) {
+            val word = Regex("(?<![\\w@])@($words)\\b", RegexOption.IGNORE_CASE)
+            if (name in connections && word.containsMatchIn(typed)) {
+                typed = typed.replace(word, "").replace(Regex(" {2,}"), " ").trim()
+                if (mentions.none { it.name == name }) mentions += Mention(name)
+            }
+        }
         val lead = mentions.joinToString("") { m -> "@" + m.name + (if (m.repos.isEmpty()) "" else " " + m.repos.joinToString(", ")) + "\n" }
-        if (text.isNotEmpty() || lead.isNotEmpty()) blocks += buildJsonObject { put("type", "text"); put("text", (if (lead.isEmpty()) "" else lead + "\n") + text.ifEmpty { "Use this for what comes next." }) }
+        if (typed.isNotEmpty() || lead.isNotEmpty()) blocks += buildJsonObject { put("type", "text"); put("text", if (lead.isEmpty()) typed else if (typed.isEmpty()) lead.trim() else lead + "\n" + typed) }
         if (blocks.none { it.str("type") == "text" }) blocks += buildJsonObject { put("type", "text"); put("text", "Please look at the attached file${if (blocks.size == 1) "" else "s"}.") }
         buzz()
         askNotifications()
-        val usesConnection = mentions.isNotEmpty()
         scope.launch {
-            // The connected accounts are tools, and tools belong to Work mode: a message that names one switches the chat over.
-            if (usesConnection && !c.agent) g.dao.update(c.copy(agent = true))
             if (edit != null) g.runs.editAndResend(c.id, edit.msgId, JsonArray(blocks)) else g.runs.send(c.id, JsonArray(blocks))
         }
         input = ""
@@ -369,7 +386,8 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem({ Text("Model and tools") }, { menu = false; showControls = true }, leadingIcon = { Icon(Icons.Rounded.Tune, null) })
                         DropdownMenuItem({ Text("Rename") }, { menu = false; renaming = true }, leadingIcon = { Icon(Icons.Rounded.Edit, null) })
-                        DropdownMenuItem({ Text("Share with a code") }, { menu = false; sharing = true }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) })
+                        // There is nothing to hand over until something has been said.
+                        DropdownMenuItem({ Text("Share with a code") }, { menu = false; sharing = true }, leadingIcon = { Icon(Icons.Rounded.QrCode2, null) }, enabled = messages.isNotEmpty())
                         DropdownMenuItem({ Text("Delete chat") }, { menu = false; deleting = true }, leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null) })
                     }
                 }
@@ -462,8 +480,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                     }
                     Composer(
                         chat = chat, run = run, input = input, onInput = { pastedWhole = input.isBlank() && it.trim().length == ShareCode.LENGTH; input = it }, picked = picked, importing = importing, editing = editing != null,
-                        // Connected accounts belong to Work, so a chat that has already started as a chat does not offer them.
-                        mentions = mentions, connections = if (messages.isNotEmpty() && chat?.agent != true) emptyList() else connections,
+                        mentions = mentions, connections = connections,
                         onMention = { name -> if (name == "GitHub") pickingRepos = true else if (mentions.none { it.name == name }) mentions += Mention(name) },
                         onCancelEdit = { editing = null; input = "" },
                         onAttach = pickFiles,
@@ -494,6 +511,20 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     if (showControls) chat?.let { c -> ControlsSheet(c, onDismiss = { showControls = false }) }
     if (sharing) ShareChatDialog(chatId) { sharing = false }
     if (fetching) AlertDialog(onDismissRequest = {}, confirmButton = {}, title = { Text("Opening the shared chat") }, text = { androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth()) })
+    notFound?.let { (code, original) ->
+        AlertDialog(
+            onDismissRequest = { notFound = null },
+            title = { Text("No shared chat found") },
+            text = { Text("Nothing is being shared under $code right now. A code works for ten minutes, and Pocket Agent has to be open on the device that shared it.") },
+            confirmButton = { TextButton({ notFound = null; openShared(code, original) }) { Text("Try again") } },
+            dismissButton = {
+                Row {
+                    TextButton({ notFound = null; plain = true; input = original; send(); plain = false }) { Text("Send as message") }
+                    TextButton({ notFound = null }) { Text("Cancel") }
+                }
+            },
+        )
+    }
     incoming?.let { shared ->
         AlertDialog(
             onDismissRequest = { incoming = null },
@@ -659,7 +690,13 @@ private fun Composer(
                     // On a computer Enter sends and Shift+Enter starts a new line, as people expect from a keyboard.
                     .onPreviewKeyEvent { e ->
                         if (!desktop || (e.key != Key.Enter && e.key != Key.NumPadEnter) || e.isShiftPressed || e.isCtrlPressed || e.isAltPressed) false
-                        else { if (e.type == KeyEventType.KeyDown && !running) onSend(); true }
+                        else {
+                            if (e.type == KeyEventType.KeyDown && !running) {
+                                // With the list of accounts showing, Enter takes the first one, as it would in any pick list.
+                                if (offers.isNotEmpty()) { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); onMention(offers.first()) } else onSend()
+                            }
+                            true
+                        }
                     },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
                 cursorBrush = SolidColor(cs.primary),

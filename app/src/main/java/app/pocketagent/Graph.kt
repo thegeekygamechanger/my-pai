@@ -63,6 +63,20 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun tasksChanged(chatId: Long, tasksJson: String) = runBlocking { dao.setTasks(chatId, tasksJson) }
     }
     val integrations = Integrations({ name -> vault.read(name) })
+    private val shares = HashMap<Long, app.pocketagent.sync.ShareHost>()
+
+    /**
+     * The share that is open for a chat, started if there is none. It stays up for its ten minutes even after
+     * its window is closed, so the person can leave the app's share window to send the code to someone.
+     * @param fresh ends the current one and starts again with a new code
+     */
+    fun share(chatId: Long, fresh: Boolean = false): app.pocketagent.sync.ShareHost = synchronized(shares) {
+        val open = shares[chatId]
+        if (open != null && !open.expired.value && !fresh) return open
+        if (open != null) scope.launch { open.stop() }
+        app.pocketagent.sync.ShareHost(this, chatId).also { it.start(); shares[chatId] = it }
+    }
+
     val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir)
     val tools = Tools(workspace, memory, toolHost, integrations, media)
 

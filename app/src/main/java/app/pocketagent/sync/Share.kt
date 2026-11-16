@@ -98,7 +98,7 @@ class ShareHost(private val g: Graph, private val chatId: Long) {
         return true
     }
 
-    suspend fun stop() { job?.cancelAndJoin() }
+    suspend fun stop() { job?.cancelAndJoin(); _expired.value = true }
 
     companion object {
         /** How long a share code works. */
@@ -129,6 +129,7 @@ object ShareClient {
         var pair: KeyPair? = null
         var box: Sealer? = null
         var next = 0L
+        var peerSeen = false
         fun ask() {
             rid = UUID.randomUUID().toString()
             val mine = ShareSession.keyPair()
@@ -138,7 +139,7 @@ object ShareClient {
         }
         val job = g.scope.launch {
             runCatching {
-                link.run(onOnline = {}, onOpen = {}, onPeers = { if (it.isNotEmpty() && head == null) ask() }, onMessage = { m ->
+                link.run(onOnline = {}, onOpen = {}, onPeers = { if (it.isNotEmpty()) { peerSeen = true; if (head == null) ask() } }, onMessage = { m ->
                     if (m.str("rid") == rid) when (m.str("t")) {
                         "skey" -> {
                             val mine = pair
@@ -169,7 +170,13 @@ object ShareClient {
             }
         }
         // The link is closed whatever happens, including when the person gives up waiting.
-        val got = try { withTimeoutOrNull(25_000) { done.await() } } finally { job.cancel() }
+        val got = try {
+            withTimeoutOrNull(25_000) {
+                // If nobody else is in the room after a few seconds, there is no share under this code: say so without the full wait.
+                val early = withTimeoutOrNull(7_000) { done.await() }
+                if (early == null && !peerSeen) null else done.await()
+            }
+        } finally { job.cancel() }
         job.join()
         val h = head
         if (got == null || h == null) return null
@@ -187,7 +194,9 @@ object ShareClient {
         // Keep the sharer's model when this device has it; otherwise use this device's usual one.
         val theirs = g.allModels().firstOrNull { it.id == h.str("model") }
         val provider = theirs?.provider ?: settings?.provider ?: "anthropic"
-        val model = theirs?.id ?: settings?.model.orEmpty()
+        // A chat that was on Auto, or whose model this device does not have, opens on Auto unless this person has picked a model of their own.
+        val auto = app.pocketagent.ai.AutoModel.ID
+        val model = theirs?.id ?: if (h.str("model") == auto || settings?.modelChosen != true) auto else settings.model
         val chatId = g.dao.insert(Chat(
             title = h.str("title").orEmpty().ifBlank { "Shared chat" }, preview = h.str("preview").orEmpty(), createdAt = now, updatedAt = now,
             agent = h.asObj()?.get("agent")?.toString() == "true", provider = provider, model = model, effort = h.str("effort") ?: "medium", permission = settings?.permission ?: "auto_read",
