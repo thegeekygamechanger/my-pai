@@ -266,7 +266,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
     val open = rememberSaveable { mutableStateOf("") }
     Column(Modifier.fillMaxSize().background(cs.surface).statusBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalIconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
+            IconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
             Text("Settings", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.headlineMedium)
         }
         CompositionLocalProvider(LocalOpen provides open) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {

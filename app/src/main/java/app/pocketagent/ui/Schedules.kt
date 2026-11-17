@@ -150,7 +150,7 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onBack) { Icon(if (wide) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, if (wide) "Close" else "Back") }
                 Text("Scheduled tasks", Modifier.weight(1f).padding(start = 6.dp), style = MaterialTheme.typography.titleLarge)
-                FilledTonalIconButton({ adding = Schedule("", "", "") }, Modifier.padding(end = 6.dp)) { Icon(Icons.Rounded.Add, "New scheduled task") }
+                IconButton({ adding = Schedule("", "", "") }, Modifier.padding(end = 6.dp)) { Icon(Icons.Rounded.Add, "New scheduled task") }
             }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(Modifier.widthIn(max = 720.dp).fillMaxSize().navigationBarsPadding(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

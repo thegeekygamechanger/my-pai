@@ -121,7 +121,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                 if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
                 Text("History", Modifier.weight(1f).padding(start = if (onMenu != null) 6.dp else 0.dp), style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
                 IconButton({ openShared = true }) { Icon(Icons.Rounded.QrCodeScanner, "Open a shared chat") }
-                if (onMenu != null) FilledTonalIconButton(onNew) { Icon(Icons.Rounded.Add, "New chat") }
+                if (onMenu != null) IconButton(onNew) { Icon(Icons.Rounded.Add, "New chat") }
             }
             Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), shape = CircleShape, color = cs.surfaceContainerHigh) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -1,0 +1,1 @@
+A short animated opening screen; the microphone is a bare outlined icon that matches the send arrow; the round grounds behind the remaining icon buttons are gone.

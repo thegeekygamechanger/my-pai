@@ -104,14 +104,12 @@ fun Choices(options: List<Pair<String, String>>, selected: String, onSelect: (St
         @Composable
         fun arrow(back: Boolean) {
             val can = if (back) scroll.canScrollBackward else scroll.canScrollForward
-            Surface(
-                onClick = { scope.launch { scroll.animateScrollBy(if (back) -260f else 260f, spring(dampingRatio = 0.9f, stiffness = 380f)) } },
-                enabled = can, shape = CircleShape, color = cs.surfaceContainerHigh, contentColor = cs.onSurface,
-                modifier = Modifier.padding(if (back) PaddingValues(end = 8.dp) else PaddingValues(start = 8.dp)).size(34.dp).alpha(if (can) 1f else 0.35f),
+            // A bare arrow, with no ground of its own.
+            IconButton(
+                { scope.launch { scroll.animateScrollBy(if (back) -260f else 260f, spring(dampingRatio = 0.9f, stiffness = 380f)) } },
+                Modifier.size(34.dp), enabled = can,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(if (back) Icons.AutoMirrored.Rounded.KeyboardArrowLeft else Icons.AutoMirrored.Rounded.KeyboardArrowRight, if (back) "Show earlier choices" else "Show more choices", Modifier.size(20.dp))
-                }
+                Icon(if (back) Icons.AutoMirrored.Rounded.KeyboardArrowLeft else Icons.AutoMirrored.Rounded.KeyboardArrowRight, if (back) "Show earlier choices" else "Show more choices", Modifier.size(20.dp), tint = cs.onSurface.copy(alpha = if (can) 1f else 0.3f))
             }
         }
         if (arrows) arrow(back = true)

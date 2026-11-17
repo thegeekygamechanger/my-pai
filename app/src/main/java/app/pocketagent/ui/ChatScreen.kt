@@ -73,6 +73,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicNone
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Share
@@ -784,15 +785,15 @@ private fun Composer(
                 )
                 Spacer(Modifier.weight(1f))
                 if (speech != null && !running) {
-                    // Voice typing: what is said is added to the message. The button fills while it listens.
+                    // Voice typing: what is said is added to the message. A bare icon like the others on the bar, drawn as an
+                    // outline so it weighs the same as the arrow beside it; while it listens it turns into moving bars in the
+                    // theme's colour and gently pulses. Nothing fills in behind it.
                     val on = speech.listening.value
-                    val micBg by animateColorAsState(if (on) cs.tertiary else Color.Transparent, label = "mic")
+                    val micTint by animateColorAsState(if (on) cs.primary else cs.onSurfaceVariant, label = "mic")
                     val beat = if (on) pulse() else 1f
-                    Surface(onClick = speech.toggle, enabled = !speech.busy.value, shape = CircleShape, color = micBg, contentColor = if (on) cs.onTertiary else cs.onSurfaceVariant, modifier = Modifier.padding(end = 6.dp).size(44.dp).scale(if (on) 0.92f + 0.12f * beat else 1f)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            if (speech.busy.value) androidx.compose.material3.LoadingIndicator(Modifier.size(26.dp))
-                            else Icon(if (on) Icons.Rounded.GraphicEq else Icons.Rounded.Mic, if (on) "Stop listening" else "Speak your message")
-                        }
+                    IconButton(speech.toggle, Modifier.size(40.dp), enabled = !speech.busy.value) {
+                        if (speech.busy.value) androidx.compose.material3.LoadingIndicator(Modifier.size(22.dp))
+                        else Icon(if (on) Icons.Rounded.GraphicEq else Icons.Rounded.MicNone, if (on) "Stop listening" else "Speak your message", Modifier.size(22.dp).scale(if (on) 0.9f + 0.2f * beat else 1f), tint = micTint)
                     }
                 }
                 // Send and Stop are bare icons on the bar, with no circle behind them. The arrow takes the theme's colour when

@@ -121,7 +121,23 @@ sealed interface Screen {
 @Composable
 fun AppRoot(host: Host) {
     val g = host.graph
-    val s = g.settings.collectAsState().value ?: return
+    // The settings take a moment to load. Until they have, and for a beat after, the opening screen is all there is.
+    val s = g.settings.collectAsState().value
+    val first = remember { app.pocketagent.data.Settings() }
+    CompositionLocalProvider(LocalGraph provides g) {
+        PocketTheme((s ?: first).theme, (s ?: first).dynamicColor, (s ?: first).pureBlack) {
+            Box(Modifier.fillMaxSize()) {
+                if (s != null) AppBody(host, s)
+                Opening(loaded = s != null)
+            }
+        }
+    }
+}
+
+/** The app once its settings are known: the lock, the first-run screen, or the app itself. */
+@Composable
+private fun AppBody(host: Host, s: app.pocketagent.data.Settings) {
+    val g = host.graph
     // Locked from a cold start whenever app lock is on.
     val startLocked = remember { s.lock }
     var unlockedOnce by remember { mutableStateOf(false) }
@@ -129,13 +145,64 @@ fun AppRoot(host: Host) {
     val dark = isDark(s.theme)
     LaunchedEffect(s.secureScreen) { g.platform.setSecureScreen(s.secureScreen) }
     LaunchedEffect(dark) { g.platform.systemBars(dark) }
-    CompositionLocalProvider(LocalGraph provides g) {
-        PocketTheme(s.theme, s.dynamicColor, s.pureBlack) {
-            val ready = remember(keyTick, s.onboarded, s.sharedRev) { g.connected().isNotEmpty() }
-            when {
-                s.lock && g.platform.canLock && (host.locked.value || (startLocked && !unlockedOnce)) -> LockScreen { host.locked.value = false; unlockedOnce = true }
-                !s.onboarded || !ready -> WelcomeScreen { keyTick++ }
-                else -> Nav(host)
+    val ready = remember(keyTick, s.onboarded, s.sharedRev) { g.connected().isNotEmpty() }
+    when {
+        s.lock && g.platform.canLock && (host.locked.value || (startLocked && !unlockedOnce)) -> LockScreen { host.locked.value = false; unlockedOnce = true }
+        !s.onboarded || !ready -> WelcomeScreen { keyTick++ }
+        else -> Nav(host)
+    }
+}
+
+/**
+ * What the app shows as it opens: its mark arriving on the app's own colours, then its name, and then the whole
+ * thing lifting away from the app that has been getting ready underneath. Shown once per start, not again when a
+ * phone is turned. With motion switched off it is a brief still.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun Opening(loaded: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val motion = LocalMotion.current
+    var show by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(loaded) { if (loaded && show) { kotlinx.coroutines.delay(if (motion) 1150 else 250); show = false } }
+    AnimatedVisibility(
+        show, enter = androidx.compose.animation.EnterTransition.None,
+        exit = fadeOut(androidx.compose.animation.core.tween(420)) + scaleOut(androidx.compose.animation.core.tween(420), targetScale = 1.07f),
+    ) {
+        val hour = remember { java.time.LocalTime.now().hour }
+        Box(
+            // It covers everything and takes every touch until it has gone.
+            Modifier.fillMaxSize().background(cs.surfaceContainerLowest)
+                .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {},
+            contentAlignment = Alignment.Center,
+        ) {
+            Backdrop(backdropColors(hour, null), Modifier.fillMaxSize(), speed = 7f, strength = 1f)
+            val arrive = remember { Animatable(if (motion) 0f else 1f) }
+            val name = remember { Animatable(if (motion) 0f else 1f) }
+            val line = remember { Animatable(if (motion) 0f else 1f) }
+            LaunchedEffect(Unit) { arrive.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 170f)) }
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(200); name.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(380); line.animateTo(1f, androidx.compose.animation.core.tween(520, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // The mark turns into place as it grows; the spark on it stays upright.
+                Box(
+                    Modifier.size(104.dp).graphicsLayer {
+                        val p = arrive.value
+                        val size = 0.45f + 0.55f * p
+                        scaleX = size; scaleY = size; rotationZ = (1f - p) * -120f; alpha = (p * 1.6f).coerceIn(0f, 1f)
+                    }.clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, Modifier.size(46.dp).graphicsLayer { rotationZ = (1f - arrive.value) * 120f }, tint = cs.onPrimaryContainer)
+                }
+                Text(
+                    "My PAI", Modifier.padding(top = 24.dp).graphicsLayer { alpha = name.value; translationY = (1f - name.value) * 16.dp.toPx() },
+                    style = MaterialTheme.typography.displaySmall.copy(fontFamily = app.pocketagent.ui.theme.Heros, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = cs.onSurface,
+                )
+                Text(
+                    "Your personal AI", Modifier.padding(top = 6.dp).graphicsLayer { alpha = line.value; translationY = (1f - line.value) * 12.dp.toPx() },
+                    style = MaterialTheme.typography.bodyLarge, color = cs.onSurfaceVariant,
+                )
             }
         }
     }
