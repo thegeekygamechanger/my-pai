@@ -107,6 +107,8 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
             // A scheduled task announces its result with a sound wherever the person is; an ordinary reply only speaks up when they have gone to another app.
             // An incognito chat announces only that a reply is there, never what it or the chat says.
             val hidden = chat.uid.startsWith(app.pocketagent.data.INCOGNITO)
+            // Unread until it is opened, unless the person is looking at this very chat right now.
+            if (!hidden && (viewing.value != chat.id || !platform.inForeground())) scope.launch { markUnread(chat.id) }
             val shown = if (hidden) chat.copy(title = "Incognito chat") else chat
             val words = if (hidden) "" else replyPreview
             if (scheduler.wasScheduled(chat.id)) { if (s?.notifyTasks != false) platform.notifyFinished(shown, words, failed, sound = true) }
@@ -240,8 +242,21 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         if (db.dao().chat(id)?.let { it.uid.startsWith(app.pocketagent.data.INCOGNITO) } == true) deleteChat(id)
     }
 
+    /** The chat on screen right now, if any. A reply that lands there while the app is in front counts as read. */
+    val viewing = MutableStateFlow<Long?>(null)
+
+    /** A reply arrived in a chat nobody was looking at: it gets a small dot in the lists until it is opened. */
+    suspend fun markUnread(id: Long) {
+        settingsStore.update { if (id in it.unreadChats) it else it.copy(unreadChats = (it.unreadChats + id).takeLast(300)) }
+    }
+
+    suspend fun markRead(id: Long) {
+        if (settings.value?.unreadChats?.contains(id) == true) settingsStore.update { it.copy(unreadChats = it.unreadChats - id) }
+    }
+
     suspend fun deleteChat(id: Long) {
         runs.stop(id)
+        markRead(id)
         val paths = Regex("\"path\":\"(att/[^\"]+)\"")
         dao.messages(id).forEach { m -> paths.findAll(blobs.unpack(m.content)).forEach { attach.file(it.groupValues[1]).delete() } }
         blobs.deleteFor(id)

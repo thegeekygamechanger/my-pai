@@ -288,6 +288,15 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
     var sharing by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     val incognito = chat?.incognito == true
+    // This is the chat being looked at. Opening it, or coming back to the app while it is open, clears its unread dot.
+    androidx.compose.runtime.DisposableEffect(chatId) { g.viewing.value = chatId; onDispose { if (g.viewing.value == chatId) g.viewing.value = null } }
+    val unreadHere = settings?.unreadChats?.contains(chatId) == true
+    LaunchedEffect(chatId, unreadHere) {
+        if (!unreadHere) return@LaunchedEffect
+        while (!g.platform.inForeground()) delay(1000)
+        g.markRead(chatId)
+    }
+    val unreadElsewhere = settings?.unreadChats?.any { it != chatId } == true
     var importing by remember { mutableStateOf(false) }
     // Connected accounts the person has pulled into this message with "@".
     val mentions = remember(chatId) { mutableStateListOf<Mention>() }
@@ -392,7 +401,11 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         Column(Modifier.fillMaxSize().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
+                if (onMenu != null) Box {
+                    IconButton(onMenu) { Icon(Icons.Rounded.Menu, if (unreadElsewhere) "Menu, with unread replies" else "Menu") }
+                    // A small dot on the menu button says a reply is waiting in another chat.
+                    if (unreadElsewhere) Box(Modifier.align(Alignment.TopEnd).padding(top = 11.dp, end = 9.dp).size(7.dp).background(cs.primary, CircleShape))
+                }
                 // The name of the chat, and under it the model that answers. A tap or a long press on it opens the model and tools.
                 Column(
                     Modifier.weight(1f).padding(start = if (onMenu == null) 14.dp else 0.dp).clip(MaterialTheme.shapes.small)
@@ -415,22 +428,14 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                         )
                     }
                 }
-                // New chat, then the three dots. Both take their colours from the theme in use, light or dark.
+                // New chat, then the three dots: bare icons sitting on the chat's own colours, with no ring or ground of their
+                // own, drawn in the theme's text colour so they read in light and in dark.
                 // New chat wakes up once something has been said here: an empty chat is already a new one.
                 val canStartNew = messages.isNotEmpty() || run != null
-                val corner = cs.surfaceContainerHigh.copy(alpha = if (LocalDark.current) 0.72f else 0.8f)
-                val edge = androidx.compose.foundation.BorderStroke(1.dp, cs.outlineVariant.copy(alpha = 0.6f))
-                Surface(
-                    onClick = onNew, enabled = canStartNew, shape = CircleShape, color = corner, contentColor = cs.onSurface, border = edge,
-                    modifier = Modifier.padding(start = 2.dp).size(44.dp).alpha(if (canStartNew) 1f else 0.38f),
-                ) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Add, "New chat") }
-                }
+                IconButton(onNew, enabled = canStartNew) { Icon(Icons.Rounded.Add, "New chat", tint = cs.onSurface.copy(alpha = if (canStartNew) 1f else 0.34f)) }
                 // Everything else about this chat: handing it to someone with a code, and going incognito.
-                Box(Modifier.padding(start = 8.dp, end = 8.dp)) {
-                    Surface(onClick = { menu = true }, shape = CircleShape, color = corner, contentColor = cs.onSurface, border = edge, modifier = Modifier.size(44.dp)) {
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.MoreVert, "More for this chat") }
-                    }
+                Box(Modifier.padding(end = 6.dp)) {
+                    IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "More for this chat", tint = cs.onSurface) }
                     DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(24.dp), containerColor = cs.surfaceContainerHigh) {
                         @Composable
                         fun item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean = true, onClick: () -> Unit) = DropdownMenuItem(
@@ -790,19 +795,13 @@ private fun Composer(
                         }
                     }
                 }
-                // Send becomes Stop while a reply is in progress: the circle squares off and the colour changes.
-                val corner by animateDpAsState(if (running) 14.dp else 24.dp, spring(dampingRatio = 0.5f, stiffness = 400f), label = "corner")
-                val bg by animateColorAsState(if (running) cs.errorContainer else if (canSend) cs.primary else cs.surfaceContainerHighest, label = "sendBg")
-                val fg by animateColorAsState(if (running) cs.onErrorContainer else if (canSend) cs.onPrimary else cs.onSurfaceVariant.copy(alpha = 0.5f), label = "sendFg")
-                val press by animateFloatAsState(if (canSend || running) 1f else 0.9f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "sendScale")
-                Surface(
-                    onClick = { if (running) onStop() else onSend() }, enabled = running || canSend,
-                    shape = RoundedCornerShape(corner), color = bg, contentColor = fg, modifier = Modifier.size(48.dp).scale(press),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        AnimatedContent(running, transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "sendIcon") { r ->
-                            Icon(if (r) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward, if (r) "Stop" else "Send")
-                        }
+                // Send and Stop are bare icons on the bar, with no circle behind them. The arrow takes the theme's colour when
+                // there is something to send and is faint when there is not. While a reply is being written it becomes a grey
+                // square that still stops it: nothing turns red.
+                val tint by animateColorAsState(if (running) cs.onSurfaceVariant else if (canSend) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.4f), label = "sendTint")
+                IconButton({ if (running) onStop() else onSend() }, Modifier.size(40.dp), enabled = running || canSend) {
+                    AnimatedContent(running, transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "sendIcon") { r ->
+                        Icon(if (r) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward, if (r) "Stop" else "Send", Modifier.size(22.dp), tint = tint)
                     }
                 }
             }

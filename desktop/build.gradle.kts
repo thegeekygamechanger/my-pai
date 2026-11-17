@@ -13,7 +13,7 @@ plugins {
 }
 
 // Keep in step with versionName in app/build.gradle.kts.
-val appVersion = "1.0.2"
+val appVersion = "1.0.3"
 
 // Android-only files: each has a counterpart in this module under a different file name, or is not needed here.
 val androidOnly = listOf(
@@ -67,6 +67,14 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "app.pocketagent.desktop.MainKt"
+        // A lighter Java runtime for a desktop app that spends most of its time waiting. Measured on the packaged app,
+        // idle on a chat: total memory 367 MB -> about 265 MB, the app's own memory 253 MB -> about 155 MB, with the same
+        // start time. The serial collector and the first-tier compiler need far less memory than the server defaults;
+        // the heap gives memory back after use; -Xmx only caps a runaway, it costs nothing until it is needed.
+        jvmArgs += listOf(
+            "-XX:+UseSerialGC", "-Xms16m", "-Xmx768m", "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=25",
+            "-XX:TieredStopAtLevel=1", "-XX:ReservedCodeCacheSize=48m", "-Xss512k",
+        )
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.AppImage)
             packageName = "MyPAI"

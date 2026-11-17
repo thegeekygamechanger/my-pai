@@ -99,11 +99,13 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
     val listState = rememberLazyListState()
     // What to show: newest first as usual, oldest first, or only one kind of chat.
     var filter by rememberSaveable { mutableStateOf("new") }
+    val unread = g.settings.collectAsState().value?.unreadChats.orEmpty()
     val listed = chats?.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
     val visible = listed?.let { all ->
         when (filter) {
             "old" -> all.sortedBy { it.updatedAt }
             "running" -> all.filter { runs.containsKey(it.id) }
+            "unread" -> all.filter { it.id in unread }
             "pinned" -> all.filter { it.pinned }
             "chat" -> all.filter { !it.agent }
             "work" -> all.filter { it.agent }
@@ -133,7 +135,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                 }
             }
             if (!listed.isNullOrEmpty()) Choices(
-                listOf("new" to "New", "old" to "Old", "running" to "In progress", "today" to "Last 24 hours", "pinned" to "Pinned", "chat" to "Chat", "work" to "Work"),
+                listOf("new" to "New", "old" to "Old", "running" to "In progress", "unread" to "Unread", "today" to "Last 24 hours", "pinned" to "Pinned", "chat" to "Chat", "work" to "Work"),
                 filter, { filter = it }, Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
             )
             UpdateBanner()
@@ -148,6 +150,7 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                             query.isNotBlank() -> "Nothing found"
                             listed.isNullOrEmpty() -> "No chats yet"
                             filter == "running" -> "Nothing in progress"
+                            filter == "unread" -> "Nothing unread"
                             filter == "pinned" -> "Nothing pinned"
                             filter == "today" -> "Nothing in the last 24 hours"
                             filter == "work" -> "No work yet"
@@ -182,6 +185,8 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text(friendlyTime(chat.updatedAt), style = MaterialTheme.typography.labelSmall, color = cs.outline)
+                                        // A small dot: a reply here has not been looked at yet. It goes when the chat is opened.
+                                        if (chat.id in unread) Box(Modifier.padding(top = 5.dp).size(7.dp).background(cs.primary, CircleShape))
                                         if (chat.pinned) Icon(Icons.Rounded.PushPin, "Pinned", Modifier.padding(top = 4.dp).size(14.dp), tint = cs.primary)
                                     }
                                 }

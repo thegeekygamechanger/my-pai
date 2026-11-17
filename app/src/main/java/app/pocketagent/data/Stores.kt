@@ -74,6 +74,8 @@ data class Settings(
     /** Look for a newer release on GitHub once a day. */
     val autoUpdate: Boolean = true,
     val lastUpdateCheck: Long = 0,
+    /** Chats on this device with a reply the person has not looked at yet (a scheduled task's result, a reply that came while they were elsewhere). */
+    val unreadChats: List<Long> = emptyList(),
     val fallbacks: Boolean = true,
     /** The model lists last fetched with the user's keys, by service, so the picker is instant and works offline. */
     val models: Map<String, List<SavedModel>> = emptyMap(),

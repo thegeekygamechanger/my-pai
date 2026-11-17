@@ -78,6 +78,9 @@ fun backdropColors(hour: Int, weather: WeatherNow?): List<Color> {
     }
 }
 
+/** The pause between frames of slow, ambient motion (the drifting colours, the turning mark). */
+const val AMBIENT_FRAME_MS = 24L
+
 /**
  * Soft patches of colour behind the chat. [speed] is how many times a minute they complete their slow circuit
  * (0 holds them still where they are); [strength] scales how much colour shows through. Light on the
@@ -88,10 +91,14 @@ fun Backdrop(colors: List<Color>, modifier: Modifier = Modifier, speed: Float = 
     val base = (if (LocalDark.current) 0.30f else 0.42f) * strength
     val motion = LocalMotion.current
     var t by remember { mutableFloatStateOf(0.2f) }
-    LaunchedEffect(speed, motion) {
-        if (speed <= 0f || !motion) return@LaunchedEffect
+    // The slow drift is redrawn about thirty times a second, which the eye cannot tell from sixty at this pace and costs
+    // half the work. While the window is behind another one the idle drift holds still; a reply being written still flows.
+    val inFront = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(speed, motion, inFront) {
+        if (speed <= 0f || !motion || (!inFront && speed < 5f)) return@LaunchedEffect
         var last = withFrameNanos { it }
         while (true) {
+            kotlinx.coroutines.delay(AMBIENT_FRAME_MS)
             val now = withFrameNanos { it }
             t = (t + (now - last) / 1e9f * speed / 60f) % 1f
             last = now

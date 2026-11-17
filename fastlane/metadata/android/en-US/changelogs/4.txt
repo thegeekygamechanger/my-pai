@@ -1,0 +1,1 @@
+Send and Stop are smaller, bare icons (grey while a reply is written, no red); the + and three-dot buttons have no ring. Chats with a reply you have not seen yet, such as a scheduled Morning news brief, show a small dot until opened.

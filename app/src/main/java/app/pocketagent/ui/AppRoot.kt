@@ -92,6 +92,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
@@ -321,14 +323,21 @@ private fun Nav(host: Host) {
 private fun LivingMark(label: String?, onClick: (() -> Unit)?) {
     val cs = MaterialTheme.colorScheme
     val motion = LocalMotion.current
-    val turn: Float
-    val breath: Float
-    if (motion) {
-        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "mark")
-        val a by t.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(22000, easing = androidx.compose.animation.core.LinearEasing)), label = "turn")
-        val b by t.animateFloat(0.86f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1900, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "breath")
-        turn = a; breath = b
-    } else { turn = 0f; breath = 1f }
+    // It moves about thirty times a second, and only while the window is in front: enough to look alive, with little work.
+    val inFront = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    var seconds by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(motion, inFront) {
+        if (!motion || !inFront) return@LaunchedEffect
+        var last = androidx.compose.runtime.withFrameNanos { it }
+        while (true) {
+            kotlinx.coroutines.delay(AMBIENT_FRAME_MS)
+            val now = androidx.compose.runtime.withFrameNanos { it }
+            seconds += (now - last) / 1e9f
+            last = now
+        }
+    }
+    val turn = (seconds * 360f / 22f) % 360f
+    val breath = 0.99f + 0.13f * kotlin.math.sin(seconds * 2f * Math.PI.toFloat() / 3.8f)
     Box(
         Modifier.size(40.dp).graphicsLayer { rotationZ = turn }.clip(MaterialShapes.Cookie9Sided.toShape()).background(cs.primaryContainer)
             .then(if (onClick != null) Modifier.clickable(onClickLabel = label, onClick = onClick) else Modifier),
@@ -355,6 +364,7 @@ private fun SideMenu(
     val chats by remember { g.dao.chats() }.collectAsState(emptyList())
     val runs by g.allRuns.collectAsState()
     val listed = chats.filter { it.title.isNotBlank() || runs.containsKey(it.id) }
+    val unread = g.settings.collectAsState().value?.unreadChats.orEmpty()
     Column(modifier) {
         Row(Modifier.padding(start = 24.dp, top = 22.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             LivingMark(if (onMark != null) "Collapse the side menu" else null, onMark)
@@ -396,6 +406,8 @@ private fun SideMenu(
                             chat.title.ifBlank { "New chat" }, Modifier.weight(1f).padding(start = 14.dp), style = MaterialTheme.typography.bodyMedium,
                             color = if (on) cs.onSecondaryContainer else cs.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         )
+                        // A small dot: a reply here has not been looked at yet. It goes when the chat is opened.
+                        if (chat.id in unread) Box(Modifier.padding(start = 8.dp).size(7.dp).background(cs.primary, androidx.compose.foundation.shape.CircleShape).semantics { contentDescription = "Unread" })
                         if (chat.pinned) Icon(Icons.Rounded.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(14.dp), tint = cs.primary)
                     }
                     ChatMenu(chat, menu, { menu = false }, onDeleted)
