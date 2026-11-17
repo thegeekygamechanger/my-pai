@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,8 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +82,9 @@ fun WorkspaceScreen(onBack: () -> Unit) {
     var version by remember { mutableIntStateOf(0) }
     var viewing by remember { mutableStateOf<File?>(null) }
     var deleting by remember { mutableStateOf<File?>(null) }
+    // A line that says what just happened to a file ("Saved to Downloads"), gone again after a moment.
+    var note by remember { mutableStateOf("") }
+    LaunchedEffect(note) { if (note.isNotEmpty()) { kotlinx.coroutines.delay(3500); note = "" } }
     val dir = File(root, rel)
     val entries = remember(tab, rel, version) { dir.listFiles()?.sortedWith(compareBy({ it.isFile }, { it.name.lowercase() })) ?: emptyList() }
 
@@ -86,12 +92,14 @@ fun WorkspaceScreen(onBack: () -> Unit) {
         if (viewing != null) viewing = null else rel = rel.substringBeforeLast('/', "")
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(cs.surface).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!wide || viewing != null || rel.isNotEmpty()) IconButton({ if (viewing != null) viewing = null else if (rel.isNotEmpty()) rel = rel.substringBeforeLast('/', "") else onBack() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
             Text(viewing?.name ?: "Workspace", Modifier.weight(1f).padding(start = if (wide && viewing == null && rel.isEmpty()) 18.dp else 6.dp), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             viewing?.let { f ->
                 IconButton({ runCatching { clipboard.setText(AnnotatedString(f.readText().take(500_000))) } }) { Icon(Icons.Rounded.ContentCopy, "Copy contents") }
+                if (tab == "files") IconButton({ note = g.platform.saveCopy(f) ?: "Could not save a copy here. Use Share instead." }) { Icon(Icons.Rounded.Download, "Download a copy") }
                 if (tab == "files") IconButton({ g.platform.shareFile(f) }) { Icon(Icons.Rounded.Share, if (g.platform.isDesktop) "Show in folder" else "Share file") }
                 IconButton({ deleting = f }) { Icon(Icons.Rounded.DeleteOutline, "Delete file") }
             }
@@ -101,7 +109,7 @@ fun WorkspaceScreen(onBack: () -> Unit) {
             val text = remember(file, version) {
                 runCatching {
                     val bytes = file.readBytes()
-                    if (bytes.take(4096).any { it == 0.toByte() }) "(This is not a text file. Use Share to open it in another app.)" else String(bytes, 0, minOf(bytes.size, 400_000), Charsets.UTF_8)
+                    if (bytes.take(4096).any { it == 0.toByte() }) "(Not a text file. Use Share to open it in another app.)" else String(bytes, 0, minOf(bytes.size, 400_000), Charsets.UTF_8)
                 }.getOrDefault("(Could not read this file.)")
             }
             SelectionContainer(Modifier.fillMaxSize()) {
@@ -137,11 +145,23 @@ fun WorkspaceScreen(onBack: () -> Unit) {
                             Text(f.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(if (f.isDirectory) "${f.list()?.size ?: 0} items" else size(f.length()) + " · " + friendlyTime(f.lastModified()), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                         }
+                        // A file can leave the workspace two ways: a copy into Downloads, or handed to another app (on a computer, shown in its folder).
+                        if (f.isFile && tab == "files") {
+                            IconButton({ note = g.platform.saveCopy(f) ?: "Could not save a copy here. Use Share instead." }) { Icon(Icons.Rounded.Download, "Download ${f.name}", tint = cs.onSurfaceVariant) }
+                            IconButton({ g.platform.shareFile(f) }) { Icon(Icons.Rounded.Share, if (g.platform.isDesktop) "Show ${f.name} in its folder" else "Share ${f.name}", tint = cs.onSurfaceVariant) }
+                        }
                         IconButton({ deleting = f }) { Icon(Icons.Rounded.DeleteOutline, "Delete ${f.name}", tint = cs.onSurfaceVariant) }
                     }
                 }
             }
         }
+    }
+    // Said over the list, not in it, so the rows do not jump under the finger.
+    androidx.compose.animation.AnimatedVisibility(note.isNotEmpty(), Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 22.dp), enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
+        Surface(shape = RoundedCornerShape(50), color = cs.inverseSurface, shadowElevation = 3.dp) {
+            Text(note, Modifier.padding(horizontal = 18.dp, vertical = 10.dp), style = MaterialTheme.typography.labelLarge, color = cs.inverseOnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
     }
 
     deleting?.let { f ->
