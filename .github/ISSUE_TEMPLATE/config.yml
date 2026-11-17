@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question or share an idea
+    url: https://github.com/thegeekygamechanger/my-pai/discussions
+    about: Questions, ideas and anything that is not a problem report.
+  - name: Report a security problem privately
+    url: https://github.com/thegeekygamechanger/my-pai/security/advisories/new
+    about: Please do not open a public issue for a security problem.

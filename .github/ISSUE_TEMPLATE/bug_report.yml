@@ -1,0 +1,53 @@
+name: Report a problem
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please do not paste an API key, a token or anything private. For a security problem, use the Security tab instead of this form.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it again
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings, About.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Android
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: service
+    attributes:
+      label: AI service and model, if it matters
+      placeholder: "Claude, OpenAI, Ollama ..."
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: A screenshot helps. Check that nothing private is visible in it.

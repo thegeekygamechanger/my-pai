@@ -1,0 +1,32 @@
+name: Suggest something
+description: An idea for the app
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The need behind the idea, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+    validations:
+      required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: The app's rules
+      options:
+        - label: This needs no account, sign-in or tracking, and no server that stores people's data.
+          required: true
+  - type: dropdown
+    id: help
+    attributes:
+      label: Would you like to build it yourself
+      options:
+        - "Yes"
+        - "Maybe, with some pointers"
+        - "No"

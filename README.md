@@ -4,10 +4,13 @@ Your personal AI. Chat with it, or hand it work and let it get on with it. For A
 
 **[Download the latest release](https://github.com/thegeekygamechanger/my-pai/releases/latest)**
 
+No account, ever: there is no sign-in, no email, no phone number and no tracking. Devices are linked only by a code or a QR picture.
+
 ## What it does
 
 - **Your own keys.** Claude, OpenAI, OpenRouter, Groq, Gemini, Mistral, DeepSeek, Together, Fireworks, Cerebras, xAI, NVIDIA, Hugging Face, or any OpenAI-compatible endpoint. Or no key at all: point it at Ollama and use models that run on your own computer. No account with us, no ads, no tracking.
-- **Chat and Work.** In Work mode the model works in steps with tools: files in a private workspace, memory notes, a task list, web search, GitHub and Gmail if you connect them, and (Claude models) a sandbox where it runs code to make and convert files: Markdown to PDF, a Word or Excel file, a chart or a diagram. What it makes there is saved into your workspace and shown in the chat. It asks before it changes anything.
+- **Chat and Work.** In Work mode the model works in steps with tools: files in a private workspace, memory notes, a task list, web search, GitHub and Gmail if you connect them, and (Claude models) a sandbox where it runs code to make and convert files: Markdown to PDF, a Word or Excel file, a chart or a diagram. What it makes there is saved into your workspace and shown in the chat. It asks before it changes anything. An ordinary chat can save a file too: ask it to "save this as notes.md" or "make a PDF of that". A file being written shows in the chat as it grows, and Stop keeps what was written so far.
+- **MCP servers.** Add tools from other services by their address (Settings, Connections), with a pasted token only if the server needs one; on a computer a server can also be a local program. Type `@mcp` in a chat to pick one, the same way as `@github` and `@gmail`. You switch servers and single tools on or off, and every call is shown to you (server, tool, arguments) for a yes or no first. A server is a third party and receives what is sent to it. It speaks the 2026-07-28 revision of the Model Context Protocol and falls back to the handshake of the 2025 revisions.
 - **Incognito chat.** A chat that is in no history, is never synced or shared, and is erased when you leave it.
 - **Pictures and videos, with your own key.** With a Gemini, OpenAI or Pollinations key added, ask for a picture in any chat; short videos need a Gemini or Pollinations key. With none of those keys the feature is not shown at all.
 - **Keeps working.** Several chats and pieces of work can run at once and carry on when you switch apps.
@@ -45,6 +48,12 @@ PORT=18790 node server/relay.mjs &
 To run your own relay, start `server/relay.mjs` (plain Node, no dependencies) behind HTTPS and build with `-Dpocketagent.relay=https://your.host` on the desktop, or change `SyncEngine.RELAY`.
 
 The same relay can pass on the notes people write under Settings, Send feedback. That is off unless the relay is given an email service key and a mailbox in its environment (`BREVO_API_KEY`, `FEEDBACK_TO`, `FEEDBACK_FROM`, described at the top of `server/relay.mjs`); the app only shows the form when the relay says it is on. A note is handed to the email service and forgotten, and the mailbox address is in no reply and in no build of the app.
+
+## Contributing
+
+Problems, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md): it has the rules the app keeps (no accounts, nothing stored on a server, ask before acting), how to build and test, and how to send a change. Questions go to [Discussions](https://github.com/thegeekygamechanger/my-pai/discussions), security problems to [SECURITY.md](SECURITY.md), and everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md). The people who made it are in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+What changed in each version is on the [What's new](https://thegeekygamechanger.github.io/my-pai/whats-new.html) page, and [How it compares](https://thegeekygamechanger.github.io/my-pai/compare.html) sets My PAI beside other open-source apps.
 
 ## Licence
 
