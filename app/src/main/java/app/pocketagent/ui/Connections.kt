@@ -52,7 +52,7 @@ fun ConnectionsSection() {
     val githubOn = remember(settings?.sharedRev) { g.integrations.githubOn() }
     val gmailOn = remember(settings?.sharedRev) { g.integrations.gmailOn() }
 
-    Text("Type @github, @gmail or @mcp in any chat, or just ask. Nothing is sent or changed without your OK.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    Text("Type @github or @gmail in any chat, or just ask. Nothing is sent or changed without your OK.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
 
     // GitHub
     var token by remember { mutableStateOf("") }
@@ -128,8 +128,5 @@ fun ConnectionsSection() {
         }
     }
 
-    McpSection()
-    BridgeSection()
-    ServeSection()
-    ShareSetupSection()
+
 }

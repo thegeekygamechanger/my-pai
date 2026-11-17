@@ -26,7 +26,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataUsage
@@ -159,19 +162,17 @@ private fun Tile(title: String, icon: ImageVector, content: @Composable ColumnSc
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun Card(title: String, icon: ImageVector, summary: String = "", content: @Composable ColumnScope.() -> Unit) {
+private fun Card(title: String, icon: ImageVector, summary: String = "", modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val cs = MaterialTheme.colorScheme
     val open = LocalOpen.current
-    Surface(onClick = { open.value = title }, shape = RoundedCornerShape(6.dp), color = cs.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
-                Icon(icon, null, Modifier.size(20.dp), tint = cs.onSecondaryContainer)
+    // In the grid it is a small tile: its picture, its name, and a line saying how it is set.
+    Surface(onClick = { open.value = title }, shape = RoundedCornerShape(24.dp), color = cs.surfaceContainer, modifier = modifier.heightIn(min = 104.dp)) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Box(Modifier.size(36.dp).background(cs.secondaryContainer, MaterialShapes.Cookie9Sided.toShape()), contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(19.dp), tint = cs.onSecondaryContainer)
             }
-            Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                if (summary.isNotEmpty()) Text(summary, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Open $title", tint = cs.onSurfaceVariant)
+            Text(title, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(summary.ifEmpty { " " }, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
     if (open.value == title) {
@@ -239,6 +240,7 @@ private fun AddServiceDialog(initial: Provider?, exclude: Set<String>, onDismiss
     )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
     val g = LocalGraph.current
@@ -273,8 +275,10 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
         }
         CompositionLocalProvider(LocalOpen provides open) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
-                Group("AI") {
-                    Card("AI services", Icons.Rounded.VpnKey, connected.joinToString { it.name }) {
+                // Twelve tiles, all in sight at once, each opening its own sheet: two to a row on a phone, three on a wider screen.
+                androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), maxItemsInEachRow = if (wide) 3 else 2) {
+                    val tile = Modifier.weight(1f)
+                    Card("AI services", Icons.Rounded.VpnKey, connected.joinToString { it.name }, tile) {
                         connected.forEach { p ->
                             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.VpnKey, null, Modifier.size(20.dp), tint = cs.primary)
@@ -289,7 +293,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         }
                         FilledTonalButton({ adding = true }, Modifier.padding(vertical = 6.dp)) { Text("Add a service") }
                     }
-                    Card("New chats", Icons.Rounded.AutoAwesome, defaultModel) {
+                    Card("New chats", Icons.Rounded.AutoAwesome, defaultModel, tile) {
                         Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { pickModel = true }.padding(horizontal = 4.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("Model", style = MaterialTheme.typography.bodyLarge)
@@ -302,17 +306,15 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         SwitchRow("Web search", "Let new chats search the web (Claude models).", s.web) { v -> set { it.copy(web = v) } }
                         Label("Longest reply", "The most a single reply can contain.")
                         Segmented(listOf(8_000 to "Short", 32_000 to "Normal", 64_000 to "Long", 128_000 to "Max"), s.maxOutput, { v -> set { it.copy(maxOutput = v) } }, Modifier.fillMaxWidth().padding(bottom = 6.dp))
+                        if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) {
+                            SectionLabel("Pictures and videos", Modifier.padding(top = 18.dp))
+                            Text(
+                                "Ask for a picture in any chat; it is made with your own key. Videos need a Gemini or Pollinations key.",
+                                Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
+                            )
+                        }
                     }
-                    // Making pictures and videos is offered only when one of the person's own keys can do it; otherwise it is not mentioned at all.
-                    if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) Card("Pictures and videos", Icons.Rounded.Image, listOfNotNull("Gemini".takeIf { g.keyFor("gemini") != null }, "OpenAI".takeIf { g.keyFor("openai") != null }, "Pollinations".takeIf { g.keyFor("pollinations") != null }).joinToString(" · ")) {
-                        Text(
-                            "Ask for a picture in any chat; it is made with your own key. Videos need a Gemini or Pollinations key.",
-                            Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
-                        )
-                    }
-                }
-                Group("You") {
-                    Card("About you", Icons.Rounded.Person, listOf(s.name, s.role).filter { it.isNotBlank() }.joinToString(" · ")) {
+                    Card("You", Icons.Rounded.Person, listOf(s.name, s.role).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { "Name, style, instructions" }, tile) {
                         var name by remember { mutableStateOf(s.name) }
                         OutlinedTextField(
                             name, { name = it.take(40); shared { st -> st.copy(name = name.trim()) } }, Modifier.fillMaxWidth().padding(top = 6.dp), label = { Text("Your name") }, singleLine = true,
@@ -329,8 +331,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         Segmented(STYLES, s.style, { v -> shared { it.copy(style = v) } }, Modifier.fillMaxWidth())
                         Label("Voice typing language", if (platform.isDesktop) "Automatic lets the speech model recognise the language itself." else "Automatic follows the phone's language. Pick one to speak in another.")
                         Choices(SPEECH_LANGUAGES, s.speechLang, { v -> set { it.copy(speechLang = v) } }, Modifier.padding(bottom = 6.dp))
-                    }
-                    Card("Your instructions", Icons.Rounded.EditNote, s.customInstructions.lineSequence().firstOrNull().orEmpty()) {
+                        SectionLabel("Your instructions", Modifier.padding(top = 18.dp))
                         var text by remember { mutableStateOf(s.customInstructions) }
                         OutlinedTextField(
                             text, { text = it.take(4000); shared { st -> st.copy(customInstructions = text) } },
@@ -339,9 +340,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         )
                     }
-                }
-                Group("Work") {
-                    Card("Work", Icons.Rounded.Checklist, "${s.maxSteps} steps") {
+                    Card("Work", Icons.Rounded.Checklist, "${s.maxSteps} steps", tile) {
                         Label("Permissions for new chats", PERMISSION_HELP[s.permission].orEmpty())
                         Segmented(listOf("ask" to "Ask all", "auto_read" to "Ask to change", "full_auto" to "Full auto"), s.permission, { v -> set { it.copy(permission = v) } }, Modifier.fillMaxWidth())
                         var steps by remember { mutableFloatStateOf(s.maxSteps.toFloat()) }
@@ -351,56 +350,54 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         Label(if (budget < 50f) "Token limit: none" else "Token limit: ${formatTokens(budget.toLong() * 1000)}", "Work pauses when one run has used this many tokens.")
                         Slider(budget, { budget = it }, valueRange = 0f..2000f, steps = 39, onValueChangeFinished = { set { it.copy(budgetK = if (budget < 50f) 0 else budget.toInt()) } })
                     }
-                    Card("Reliability", Icons.Rounded.Shield) {
+                    Card("Tools", Icons.Rounded.Extension, s.mcpServers.count { it.on }.let { n -> if (n == 0) "Built-in tools" else "$n server${if (n == 1) "" else "s"}" }, tile) {
+                        ToolsSection()
+                        McpSection()
+                    }
+                    Card("Accounts", Icons.Rounded.Link, (listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }).joinToString(" · ")).ifEmpty { "GitHub, Gmail" }, tile) { ConnectionsSection() }
+                    Card("Devices", Icons.Rounded.Devices, syncStatus.let { st -> if (!st.enabled) "Off" else if (st.peers.isEmpty()) "On" else "Live with ${st.peers.size} other" }, tile) {
+                        SyncSection()
+                        BridgeSection()
+                        ServeSection()
+                        ShareSetupSection()
+                    }
+                    Card("Safety", Icons.Rounded.Shield, listOfNotNull("Offline".takeIf { s.offline }, "App lock".takeIf { s.lock }, "Backup model".takeIf { s.backupModel.isNotBlank() }).joinToString(" · ").ifEmpty { "Backup, offline, lock" }, tile) {
                         SwitchRow("Summarise long chats", "Very long chats condense older messages to keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
                         SwitchRow("Fall back when declined", "If the chosen Claude model declines a request, let another Claude model answer it.", s.fallbacks) { v -> set { it.copy(fallbacks = v) } }
                         BackupModelRow()
                         SwitchRow("Offline mode", "Only Ollama and tools on this device or your own network. Nothing goes to the internet.", s.offline) { v -> set { it.copy(offline = v) } }
+                        if (!platform.isDesktop) {
+                            SectionLabel("App lock", Modifier.padding(top = 18.dp))
+                            val can = remember { platform.canLock }
+                            SwitchRow("App lock", if (can) "Ask for fingerprint, face or screen lock to open the app." else "Set a screen lock on this phone first.", s.lock, enabled = can) { v ->
+                                platform.authenticate(if (v) "Turn on app lock" else "Turn off app lock") { set { it.copy(lock = v) } }
+                            }
+                            if (s.lock) {
+                                Label("Lock after leaving the app")
+                                Segmented(listOf(0 to "At once", 60 to "1 minute", 300 to "5 minutes"), s.lockDelaySec, { v -> set { it.copy(lockDelaySec = v) } }, Modifier.fillMaxWidth())
+                            }
+                            SwitchRow("Hide screen content", "Blocks screenshots and blanks the app in the recent-apps view.", s.secureScreen) { v -> set { it.copy(secureScreen = v) } }
+                        }
                     }
-                    Card("Activity", Icons.Rounded.History, "Every tool call") { ActivitySection() }
-                }
-                Group("Connected") {
-                    Card("Connections", Icons.Rounded.Link, listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }).joinToString(" · ")) { ConnectionsSection() }
-                    Card("Sync", Icons.Rounded.Sync, syncStatus.let { st -> if (!st.enabled) "Off" else if (st.peers.isEmpty()) "On" else "Live with ${st.peers.size} other" }) { SyncSection() }
-                }
-                Group("Appearance") {
-                    Tile("Theme", Icons.Rounded.Palette) {
+                    Card("Look", Icons.Rounded.Palette, mapOf("system" to "System", "light" to "Light", "dark" to "Dark")[s.theme] ?: "System", tile) {
                         Segmented(listOf("system" to "System", "light" to "Light", "dark" to "Dark"), s.theme, { v -> set { it.copy(theme = v) } }, Modifier.fillMaxWidth(), icons = mapOf(s.theme to Icons.Rounded.Check))
-                    }
-                    Card("Display", Icons.Rounded.Contrast, listOfNotNull("Pure black".takeIf { s.pureBlack }, "Wallpaper colours".takeIf { s.dynamicColor && platform.hasDynamicColors }).joinToString(" · ").ifEmpty { "Colours and feedback" }) {
                         SwitchRow("Pure black", "Use true black backgrounds in the dark theme.", s.pureBlack) { v -> set { it.copy(pureBlack = v) } }
                         if (platform.hasDynamicColors) SwitchRow("Wallpaper colours", "Take the app's colours from your wallpaper.", s.dynamicColor) { v -> set { it.copy(dynamicColor = v) } }
                         if (!platform.isDesktop) SwitchRow("Vibration feedback", "A light tap when you send, approve or stop.", s.haptics) { v -> set { it.copy(haptics = v) } }
                     }
-                }
-                Group("Alerts and safety") {
-                    Card("Notifications", Icons.Rounded.Notifications, when { s.notifyReplies && s.notifyTasks -> "On"; s.notifyReplies || s.notifyTasks -> "Partly on"; else -> "Off" }) {
+                    Card("Alerts", Icons.Rounded.Notifications, when { s.notifyReplies && s.notifyTasks -> "On"; s.notifyReplies || s.notifyTasks -> "Partly on"; else -> "Off" }, tile) {
                         SwitchRow("Replies", "Tell me when a reply is ready while I am in another app.", s.notifyReplies) { on -> if (on) askNotifications(); scope.launch { g.settingsStore.update { it.copy(notifyReplies = on) } } }
                         SwitchRow("Scheduled tasks", "Announce the result of a scheduled task at its time, with a sound.", s.notifyTasks) { on -> if (on) askNotifications(); scope.launch { g.settingsStore.update { it.copy(notifyTasks = on) } } }
                     }
-                    if (!platform.isDesktop) Card("Security", Icons.Rounded.Lock, if (s.lock) "App lock on" else "") {
-                        val can = remember { platform.canLock }
-                        SwitchRow("App lock", if (can) "Ask for fingerprint, face or screen lock to open the app." else "Set a screen lock on this phone first.", s.lock, enabled = can) { v ->
-                            platform.authenticate(if (v) "Turn on app lock" else "Turn off app lock") { set { it.copy(lock = v) } }
-                        }
-                        if (s.lock) {
-                            Label("Lock after leaving the app")
-                            Segmented(listOf(0 to "At once", 60 to "1 minute", 300 to "5 minutes"), s.lockDelaySec, { v -> set { it.copy(lockDelaySec = v) } }, Modifier.fillMaxWidth())
-                        }
-                        SwitchRow("Hide screen content", "Blocks screenshots and blanks the app in the recent-apps view.", s.secureScreen) { v -> set { it.copy(secureScreen = v) } }
-                    }
-                }
-                Group("About") {
-                    Card("App update", Icons.Rounded.SystemUpdateAlt, updateSummary(updateState)) { UpdateSection() }
-                    Card("Usage", Icons.Rounded.DataUsage) {
+                    Card("Activity", Icons.Rounded.History, "Tool calls and usage", tile) {
                         val t = totals
                         Label(
                             if (t == null || (t.inTok ?: 0) + (t.outTok ?: 0) == 0L) "Nothing used yet"
                             else "${formatTokens((t.inTok ?: 0) + (t.cacheReadTok ?: 0))} in · ${formatTokens(t.outTok ?: 0)} out" + formatCost(t.costMicros ?: 0).let { if (it.isEmpty()) "" else " · about $it" },
                             "Across chats on this device. Cost is an estimate from Claude list prices; your account shows the real figure.",
                         )
-                    }
-                    Card("Data", Icons.Rounded.Storage) {
+                        ActivitySection()
+                        SectionLabel("Your data", Modifier.padding(top = 18.dp))
                         Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton({
                                 note = "Checking…"
@@ -413,13 +410,22 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         }
                         if (note.isNotEmpty()) Text(note, Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                     }
-                    // Offered only while the relay can pass a note on, so the button never leads nowhere.
-                    val feedbackOn by androidx.compose.runtime.produceState(false) { value = app.pocketagent.sync.Feedback.available() }
-                    if (feedbackOn) Card("Send feedback", Icons.Rounded.RateReview, "Tell the developer what works and what does not") { FeedbackForm() }
-                    LinkRow(Docs.title(Docs.CHANGELOG), Icons.Rounded.NewReleases, "Version ${platform.versionName} and the ones before it") { onDoc(Docs.CHANGELOG) }
-                    LinkRow(Docs.title(Docs.TERMS), Icons.Rounded.Gavel) { onDoc(Docs.TERMS) }
-                    LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
-                    LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
+                    Card("About", Icons.Rounded.Info, updateSummary(updateState).ifEmpty { "Version ${platform.versionName}" }, tile) {
+                        UpdateSection()
+                        // Offered only while the relay can pass a note on, so the form never leads nowhere.
+                        val feedbackOn by androidx.compose.runtime.produceState(false) { value = app.pocketagent.sync.Feedback.available() }
+                        if (feedbackOn) {
+                            SectionLabel("Send feedback", Modifier.padding(top = 18.dp))
+                            FeedbackForm()
+                        }
+                        SectionLabel("Read", Modifier.padding(top = 18.dp))
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            LinkRow(Docs.title(Docs.CHANGELOG), Icons.Rounded.NewReleases, "Version ${platform.versionName} and the ones before it") { onDoc(Docs.CHANGELOG) }
+                            LinkRow(Docs.title(Docs.TERMS), Icons.Rounded.Gavel) { onDoc(Docs.TERMS) }
+                            LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
+                            LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
+                        }
+                    }
                 }
                 Text("My PAI ${platform.versionName}", Modifier.fillMaxWidth().padding(top = 22.dp, start = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.outline)
             }

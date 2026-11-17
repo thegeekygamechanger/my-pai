@@ -302,3 +302,20 @@ fun SetupOfferDialog(shared: SharedChat, onDone: (String?) -> Unit) {
         dismissButton = { TextButton({ onDone(null) }) { Text("Not now") } },
     )
 }
+
+/** The app's own tools, in a few groups, each with a switch: what the assistant may use on this device. */
+@Composable
+fun ToolsSection() {
+    val g = LocalGraph.current
+    val cs = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    val s = g.settings.collectAsState().value ?: return
+    val media = remember(s.sharedRev) { g.media.specs().isNotEmpty() }
+    Text("Built-in tools", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.titleMedium)
+    Text("What the assistant can use on this device. Switch off what you do not want; switch it back on any time.", Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+    app.pocketagent.ai.Tools.GROUPS.filter { it.id != "media" || media }.forEach { group ->
+        SwitchRow(group.name, group.about, group.id !in s.toolsOff) { on ->
+            scope.launch { g.settingsStore.update { st -> st.copy(toolsOff = if (on) st.toolsOff - group.id else (st.toolsOff + group.id).distinct()) } }
+        }
+    }
+}

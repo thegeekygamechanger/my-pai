@@ -77,8 +77,10 @@ fun McpSection() {
 
     HorizontalDivider(Modifier.padding(vertical = 14.dp), color = cs.outlineVariant.copy(alpha = 0.5f))
     Text("MCP servers", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.titleMedium)
+    // Public servers the app knows of that are not in the list (never added, or removed): one tap adds them back.
+    val suggested = remember(servers) { app.pocketagent.ai.McpPresets.ALL.filter { p -> servers.none { it.id == p.id || it.url.trimEnd('/') == p.url.trimEnd('/') } } }
     Text(
-        "Tools from other services. Type @mcp in a chat to use one. A server sees what is sent to it, so add only ones you trust; every call needs your OK.",
+        "Tools from other services. Type @mcp in a chat to use one. A server sees what is sent to it, so keep only ones you trust; every call needs your OK.",
         Modifier.padding(start = 4.dp, top = 4.dp, bottom = 10.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
     )
 
@@ -98,6 +100,8 @@ fun McpSection() {
                     // Connected, or a button that connects: a server that is off, or did not answer, says so here.
                     val state = status[s.id] ?: McpStatus.UNKNOWN
                     when {
+                        // One the app came with, not contacted yet: it is ready, and nothing is sent until a call is approved.
+                        s.on && s.untouched && state == McpStatus.UNKNOWN -> Text("Ready", Modifier.padding(end = 10.dp), style = MaterialTheme.typography.labelMedium, color = cs.primary)
                         state == McpStatus.CHECKING -> LoadingIndicator(Modifier.padding(end = 10.dp).size(22.dp))
                         s.on && state == McpStatus.CONNECTED -> Row(Modifier.padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.CheckCircle, null, Modifier.size(16.dp), tint = cs.primary)
@@ -106,9 +110,11 @@ fun McpSection() {
                         s.on && state == McpStatus.FAILED -> FilledTonalIconButton({ reconnect(s) }, Modifier.padding(end = 6.dp).size(36.dp)) { Icon(Icons.Rounded.Refresh, "Reconnect ${s.name}", Modifier.size(20.dp)) }
                         !s.on -> FilledTonalIconButton({ reconnect(s) }, Modifier.padding(end = 6.dp).size(36.dp)) { Icon(Icons.Rounded.Link, "Connect ${s.name}", Modifier.size(20.dp)) }
                     }
-                    Switch(s.on, { v -> if (v) reconnect(s) else scope.launch { g.changeMcpServer(s.id) { it.copy(on = false) } } })
+                    // Switching one of the app's own servers back on does not contact it: its tools are already known.
+                    Switch(s.on, { v -> if (v && !s.untouched) reconnect(s) else scope.launch { g.changeMcpServer(s.id) { it.copy(on = v) } } })
                 }
                 if (s.on && status[s.id] == McpStatus.FAILED && notes[s.id] == null) Text("Not connected. The server did not answer.", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.error)
+                if (s.untouched) Text("Comes with My PAI. Not contacted until you approve a call to it.", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                 if (s.wantsToken && !s.hasToken) Text("From a linked device. It needs its token typed in here: choose Edit.", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.tertiary)
                 notes[s.id]?.let { (text, bad) -> Text(text, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = if (bad) cs.error else cs.primary) }
                 AnimatedVisibility(shown) {
@@ -150,6 +156,19 @@ fun McpSection() {
         }
     }
     FilledTonalButton({ editing = McpServer(id = java.util.UUID.randomUUID().toString().take(12), name = "") }, Modifier.padding(bottom = 6.dp)) { Text("Add an MCP server") }
+    if (suggested.isNotEmpty()) {
+        Text("Suggested", Modifier.padding(start = 4.dp, top = 10.dp, bottom = 2.dp), style = MaterialTheme.typography.labelLarge, color = cs.primary)
+        Text("Public servers that need no account. They are other people's services, not My PAI's.", Modifier.padding(start = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        suggested.forEach { p ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                    Text(p.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(p.about, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                TextButton({ scope.launch { g.addPreset(p.id) } }) { Text("Add") }
+            }
+        }
+    }
 
     editing?.let { McpDialog(it, isNew = servers.none { s -> s.id == it.id }) { editing = null } }
 }
