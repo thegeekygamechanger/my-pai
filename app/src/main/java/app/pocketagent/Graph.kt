@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -78,7 +79,16 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
     }
 
     val media = app.pocketagent.ai.Media({ name -> vault.read(name) }, attach.dir)
-    val tools = Tools(workspace, memory, toolHost, integrations, media)
+    /** The MCP servers the person added. Their tools join the others; their tokens stay in the vault on this device. */
+    val mcp = app.pocketagent.ai.Mcp(
+        servers = { settings.value?.mcpServers.orEmpty() },
+        token = { id -> vault.read(app.pocketagent.ai.Mcp.tokenKey(id)) },
+        pipe = { server -> platform.mcpProgram(server.command) },
+        allowHttp = { platform.debug },
+        appVersion = platform.versionName,
+    )
+    val tools = Tools(workspace, memory, toolHost, integrations, media, mcp)
+    init { mcp.onAnswer = { id, ok -> mcpStatus.update { it + (id to if (ok) app.pocketagent.ai.McpStatus.CONNECTED else app.pocketagent.ai.McpStatus.FAILED) } } }
 
     private val runHost = object : RunHost {
         override suspend fun settings(): Settings = settingsStore.flow.first()
@@ -204,6 +214,66 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
     }
 
     /** Stores (or with null, removes) a connection's secret and tells linked devices. */
+    /**
+     * Adds an MCP server or changes one. The server is asked for its tools first; if it cannot be reached or does
+     * not answer as an MCP server does, nothing is saved and the reason comes back.
+     * @param newToken null keeps the token it has, "" removes it, anything else replaces it
+     * @return null when saved, otherwise what went wrong
+     */
+    /** Which MCP servers answered when last asked. Kept only while the app runs: it is a fact about now, not a setting. */
+    val mcpStatus = MutableStateFlow<Map<String, app.pocketagent.ai.McpStatus>>(emptyMap())
+    private fun mcpIs(id: String, status: app.pocketagent.ai.McpStatus) = mcpStatus.update { it + (id to status) }
+
+    /** Connects a server again: switches it on and asks for its tools. Returns what went wrong, or null. */
+    suspend fun connectMcp(id: String): String? {
+        val server = settingsStore.flow.first().mcpServers.firstOrNull { it.id == id } ?: return "That server was removed."
+        if (mcpStatus.value[id] == app.pocketagent.ai.McpStatus.CHECKING) return null
+        mcpIs(id, app.pocketagent.ai.McpStatus.CHECKING)
+        val problem = saveMcpServer(server.copy(on = true), null)
+        mcpIs(id, if (problem == null) app.pocketagent.ai.McpStatus.CONNECTED else app.pocketagent.ai.McpStatus.FAILED)
+        return problem
+    }
+
+    /** Asks every switched-on server that has not been asked since the app started, so the screens can say which are connected. */
+    fun checkMcp() {
+        val waiting = settings.value?.mcpServers.orEmpty().filter { it.on && (mcpStatus.value[it.id] ?: app.pocketagent.ai.McpStatus.UNKNOWN) == app.pocketagent.ai.McpStatus.UNKNOWN }
+        waiting.forEach { s -> scope.launch { connectMcp(s.id) } }
+    }
+
+    suspend fun saveMcpServer(server: app.pocketagent.ai.McpServer, newToken: String?): String? {
+        val name = server.name.trim()
+        if (name.isEmpty()) return "Give the server a name."
+        if (!server.local) app.pocketagent.ai.Mcp.urlProblem(server.url, platform.debug)?.let { return it }
+        if (server.local && !platform.isDesktop) return "A local server can only run on a computer."
+        val token = newToken?.trim() ?: vault.read(app.pocketagent.ai.Mcp.tokenKey(server.id)).orEmpty()
+        val clean = server.copy(name = name.take(40), url = server.url.trim(), command = server.command.trim(), hasToken = token.isNotEmpty())
+        val tools = try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { mcp.list(clean, tokenOverride = token) }
+        } catch (e: app.pocketagent.ai.McpError) {
+            return e.message
+        } catch (e: Exception) {
+            return "Could not reach the server (${e.message ?: e.javaClass.simpleName})."
+        }
+        vault.write(app.pocketagent.ai.Mcp.tokenKey(clean.id), token.ifEmpty { null })
+        mcp.forget(clean.id)
+        val saved = clean.copy(tools = tools, checkedAt = System.currentTimeMillis())
+        mcpIs(saved.id, app.pocketagent.ai.McpStatus.CONNECTED)
+        settingsStore.update { s -> s.copy(mcpServers = if (s.mcpServers.any { it.id == saved.id }) s.mcpServers.map { if (it.id == saved.id) saved else it } else s.mcpServers + saved) }
+        return null
+    }
+
+    /** Switches a server, or one of its tools, on or off. Nothing is sent anywhere. */
+    suspend fun changeMcpServer(id: String, change: (app.pocketagent.ai.McpServer) -> app.pocketagent.ai.McpServer) {
+        settingsStore.update { s -> s.copy(mcpServers = s.mcpServers.map { if (it.id == id) change(it) else it }) }
+    }
+
+    suspend fun removeMcpServer(id: String) {
+        mcp.forget(id)
+        mcpStatus.update { it - id }
+        vault.write(app.pocketagent.ai.Mcp.tokenKey(id), null)
+        settingsStore.update { s -> s.copy(mcpServers = s.mcpServers.filter { it.id != id }) }
+    }
+
     suspend fun setConnection(values: Map<String, String?>) {
         values.forEach { (name, value) -> vault.write(name, value?.takeIf { it.isNotBlank() }) }
         settingsStore.update { it.copy(sharedRev = System.currentTimeMillis()) }

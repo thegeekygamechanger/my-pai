@@ -565,8 +565,11 @@ fun ApprovalCard(p: PendingApproval, modifier: Modifier = Modifier, onAllow: () 
     val destructive = p.risk == Risk.DESTRUCTIVE
     val outward = p.risk == Risk.OUTWARD
     val integrations = LocalGraph.current.integrations
+    // A tool of an MCP server: the person sees which server, which tool, and exactly what it would be sent.
+    val mcp = LocalGraph.current.mcp.origin(p.name)
     val preview = remember(p) {
-        if (integrations.handles(p.name)) integrations.preview(p.name, p.input).take(3000) else when (p.name) {
+        if (mcp != null) ("Server: ${mcp.first}\nTool: ${mcp.second}\nSends:\n" + app.pocketagent.ai.PrettyJson.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), p.input)).take(3000)
+        else if (integrations.handles(p.name)) integrations.preview(p.name, p.input).take(3000) else when (p.name) {
             "write_file" -> p.input.str("content").orEmpty()
             "edit_file" -> "- " + p.input.str("old_text").orEmpty().take(400) + "\n+ " + p.input.str("new_text").orEmpty().take(400)
             "copy_to_clipboard" -> p.input.str("text").orEmpty()
@@ -579,7 +582,7 @@ fun ApprovalCard(p: PendingApproval, modifier: Modifier = Modifier, onAllow: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(toolIcon(p.name), null, Modifier.size(22.dp))
                 Column(Modifier.padding(start = 12.dp)) {
-                    Text(if (destructive) "Allow this? It cannot be undone" else if (outward) "Allow this? It goes out from your account" else "Allow this?", style = MaterialTheme.typography.labelLarge)
+                    Text(if (destructive) "Allow this? It cannot be undone" else if (mcp != null) "Allow this? It goes to ${mcp.first}, a third party" else if (outward) "Allow this? It goes out from your account" else "Allow this?", style = MaterialTheme.typography.labelLarge)
                     Text(p.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }

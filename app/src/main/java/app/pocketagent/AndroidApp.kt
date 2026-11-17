@@ -182,6 +182,23 @@ class AndroidPlatform(private val app: Application) : Platform {
         }
     }
 
+    /** A copy in Downloads, through the system's own media store: no storage permission is asked for or needed. */
+    override fun saveCopy(file: File): String? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        return runCatching {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, file.name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream")
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = app.contentResolver
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+            resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: return null
+            resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            "Saved to Downloads"
+        }.getOrNull()
+    }
+
     override fun inForeground(): Boolean = ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
     override fun runsChanged(active: Boolean) { if (active) RunService.start(app) }
     override fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean) = notifier.finished(chat, preview, failed, sound)

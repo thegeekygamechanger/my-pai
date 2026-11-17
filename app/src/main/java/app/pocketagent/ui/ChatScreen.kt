@@ -69,6 +69,9 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Menu
@@ -372,10 +375,19 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             val word = Regex("(?<![\\w@])@($words)\\b", RegexOption.IGNORE_CASE)
             if (name in connections && word.containsMatchIn(typed)) {
                 typed = typed.replace(word, "").replace(Regex(" {2,}"), " ").trim()
-                if (mentions.none { it.name == name }) mentions += Mention(name)
+                if (mentions.none { !it.mcp && it.name == name }) mentions += Mention(name)
             }
         }
-        val lead = mentions.joinToString("") { m -> "@" + m.name + (if (m.repos.isEmpty()) "" else " " + m.repos.joinToString(", ")) + "\n" }
+        // "@mcp" typed out by hand asks for the MCP servers that are switched on; servers picked from the list are named.
+        val mcpWord = Regex("(?<![\\w@])@mcp\\b", RegexOption.IGNORE_CASE)
+        var anyMcp = false
+        if (settings?.mcpServers.orEmpty().any { it.on } && mcpWord.containsMatchIn(typed)) {
+            typed = typed.replace(mcpWord, "").replace(Regex(" {2,}"), " ").trim()
+            anyMcp = true
+        }
+        val named = mentions.filter { it.mcp }.joinToString(", ") { it.name }
+        val lead = mentions.filter { !it.mcp }.joinToString("") { m -> "@" + m.name + (if (m.repos.isEmpty()) "" else " " + m.repos.joinToString(", ")) + "\n" } +
+            (if (named.isNotEmpty()) "@mcp $named\n" else if (anyMcp) "@mcp\n" else "")
         if (typed.isNotEmpty() || lead.isNotEmpty()) blocks += buildJsonObject { put("type", "text"); put("text", if (lead.isEmpty()) typed else if (typed.isEmpty()) lead.trim() else lead + "\n" + typed) }
         if (blocks.none { it.str("type") == "text" }) blocks += buildJsonObject { put("type", "text"); put("text", "Please look at the attached file${if (blocks.size == 1) "" else "s"}.") }
         buzz()
@@ -534,7 +546,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
                     Composer(
                         chat = chat, run = run, input = input, onInput = { pastedWhole = input.isBlank() && it.trim().length == ShareCode.LENGTH; input = it }, picked = picked, importing = importing, editing = editing != null,
                         mentions = mentions, connections = connections,
-                        onMention = { name -> if (name == "GitHub") pickingRepos = true else if (mentions.none { it.name == name }) mentions += Mention(name) },
+                        onMention = { name -> if (name == "GitHub") pickingRepos = true else if (mentions.none { !it.mcp && it.name == name }) mentions += Mention(name) },
                         onCancelEdit = { editing = null; input = "" },
                         onAttach = pickFiles,
                         // Chat or Work is chosen before the first message. After that the switch stays put, and a tap on the other side offers a fresh start instead.
@@ -568,7 +580,7 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
         AlertDialog(
             onDismissRequest = { notFound = null },
             title = { Text("No shared chat found") },
-            text = { Text("Nothing is being shared under $code right now. A code works for ten minutes, and My PAI has to be open on the device that shared it.") },
+            text = { Text("No chat is shared under $code now. A code lasts ten minutes, with My PAI open on the sharing device.") },
             confirmButton = { TextButton({ notFound = null; openShared(code, original) }) { Text("Try again") } },
             dismissButton = {
                 Row {
@@ -587,9 +599,9 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             dismissButton = { TextButton({ incoming = null }) { Text("Not now") } },
         )
     }
-    if (pickingRepos) RepoPicker(mentions.firstOrNull { it.name == "GitHub" }?.repos.orEmpty(), onDismiss = { pickingRepos = false }) { repos ->
+    if (pickingRepos) RepoPicker(mentions.firstOrNull { !it.mcp && it.name == "GitHub" }?.repos.orEmpty(), onDismiss = { pickingRepos = false }) { repos ->
         pickingRepos = false
-        mentions.removeAll { it.name == "GitHub" }
+        mentions.removeAll { !it.mcp && it.name == "GitHub" }
         mentions += Mention("GitHub", repos)
     }
 
@@ -607,7 +619,7 @@ private fun EmptyChat(chatId: Long, work: Boolean, incognito: Boolean = false) {
     val seed = remember(chatId) { kotlin.random.Random.nextInt() }
     // An incognito chat says what it is instead of greeting: nothing here is kept.
     val (title, line) = remember(seed, settings?.name, weather, work, incognito) {
-        if (incognito) "Incognito chat" to "Not saved to history, not synced, no memory notes. It is erased when you leave it."
+        if (incognito) "Incognito chat" to "Not saved, not synced, no memory notes. Erased when you leave."
         else greeting(settings?.name.orEmpty(), hour, weather, work, seed)
     }
     Box(Modifier.fillMaxSize()) {
@@ -621,6 +633,10 @@ private fun EmptyChat(chatId: Long, work: Boolean, incognito: Boolean = false) {
         }
     }
 }
+
+/** The icons of the message bar (attach, speak, send) share one size and one touch area. */
+private val BAR_BUTTON = 44.dp
+private val BAR_ICON = 24.dp
 
 /** Short invitations for the empty message box: one to four words each, so they never wrap. */
 private val CHAT_HINTS = listOf(
@@ -666,7 +682,22 @@ private fun Composer(
     val canSend = !running && (input.isNotBlank() || picked.isNotEmpty() || mentions.isNotEmpty())
     // Typing "@" (or "@gi…") at the end of the message offers the connected accounts that match.
     val at = remember(input) { AT.find(input) }
-    val offers = if (at == null) emptyList() else connections.filter { it.startsWith(at.groupValues[2], ignoreCase = true) && (it == "GitHub" || mentions.none { m -> m.name == it }) }
+    val offers = if (at == null) emptyList() else connections.filter { it.startsWith(at.groupValues[2], ignoreCase = true) && (it == "GitHub" || mentions.none { m -> !m.mcp && m.name == it }) }
+    // "@mcp" (or the start of a server's name) lists the MCP servers that were added, each marked connected or not.
+    val g = LocalGraph.current
+    val mcpStatus by g.mcpStatus.collectAsState()
+    val allServers = g.settings.collectAsState().value?.mcpServers.orEmpty()
+    val servers = if (at == null) emptyList() else allServers.filter { s ->
+        ("mcp".startsWith(at.groupValues[2], ignoreCase = true) || s.name.startsWith(at.groupValues[2], ignoreCase = true)) && mentions.none { m -> m.mcp && m.name == s.name }
+    }
+    fun connected(s: app.pocketagent.ai.McpServer) = s.on && mcpStatus[s.id] == app.pocketagent.ai.McpStatus.CONNECTED
+    // A connected server is pulled into the message; one that is not is connected first, and stays in the list.
+    fun pick(s: app.pocketagent.ai.McpServer) {
+        if (connected(s)) { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); mentions += Mention(s.name, mcp = true) }
+        else g.scope.launch { g.connectMcp(s.id) }
+    }
+    // The list opening is the moment to find out which servers answer, once per start of the app.
+    LaunchedEffect(servers.isNotEmpty()) { if (servers.isNotEmpty()) g.checkMcp() }
     // While a reply is being generated a soft band of colour travels round the composer's edge.
     val glow = if (running && LocalMotion.current) {
         val t = rememberInfiniteTransition(label = "glow")
@@ -704,12 +735,27 @@ private fun Composer(
                     IconButton(onCancelEdit, Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, "Cancel edit", Modifier.size(16.dp)) }
                 }
             }
-            AnimatedVisibility(offers.isNotEmpty() && !running, enter = expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AnimatedVisibility((offers.isNotEmpty() || servers.isNotEmpty()) && !running, enter = expandVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     offers.forEach { name ->
                         AssistChip(
                             onClick = { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); onMention(name) },
                             label = { Text(name) }, leadingIcon = { Icon(if (name == "GitHub") Icons.Rounded.Code else Icons.Rounded.Email, null, Modifier.size(18.dp)) },
+                        )
+                    }
+                    servers.forEach { s ->
+                        val on = connected(s)
+                        val checking = mcpStatus[s.id] == app.pocketagent.ai.McpStatus.CHECKING
+                        val failed = s.on && mcpStatus[s.id] == app.pocketagent.ai.McpStatus.FAILED
+                        AssistChip(
+                            onClick = { pick(s) }, enabled = !checking,
+                            label = { Text(s.name + if (on) " · Connected" else if (checking) " · Connecting" else if (failed) " · Not connected" else "", maxLines = 1) },
+                            leadingIcon = { Icon(Icons.Rounded.Extension, null, Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                if (on) Icon(Icons.Rounded.CheckCircle, null, Modifier.size(16.dp), tint = cs.primary)
+                                else if (checking) androidx.compose.material3.LoadingIndicator(Modifier.size(18.dp))
+                                else Icon(if (failed) Icons.Rounded.Refresh else Icons.Rounded.Link, if (failed) "Reconnect ${s.name}" else "Connect ${s.name}", Modifier.size(18.dp), tint = cs.primary)
+                            },
                         )
                     }
                 }
@@ -718,9 +764,9 @@ private fun Composer(
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     mentions.toList().forEach { m ->
                         InputChip(
-                            selected = true, onClick = { if (m.name == "GitHub") onMention("GitHub") },
+                            selected = true, onClick = { if (m.name == "GitHub" && !m.mcp) onMention("GitHub") },
                             label = { Text(m.name + when (m.repos.size) { 0 -> ""; 1 -> " · " + m.repos[0].substringAfter('/'); else -> " · ${m.repos.size} repositories" }, maxLines = 1) },
-                            leadingIcon = { Icon(if (m.name == "GitHub") Icons.Rounded.Code else Icons.Rounded.Email, null, Modifier.size(18.dp)) },
+                            leadingIcon = { Icon(if (m.mcp) Icons.Rounded.Extension else if (m.name == "GitHub") Icons.Rounded.Code else Icons.Rounded.Email, null, Modifier.size(18.dp)) },
                             trailingIcon = { Icon(Icons.Rounded.Close, "Remove ${m.name}", Modifier.size(16.dp).clip(CircleShape).clickable { mentions.remove(m) }) },
                         )
                     }
@@ -756,7 +802,9 @@ private fun Composer(
                         else {
                             if (e.type == KeyEventType.KeyDown && !running) {
                                 // With the list of accounts showing, Enter takes the first one, as it would in any pick list.
-                                if (offers.isNotEmpty()) { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); onMention(offers.first()) } else onSend()
+                                if (offers.isNotEmpty()) { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); onMention(offers.first()) }
+                                else if (servers.isNotEmpty()) pick(servers.first())
+                                else onSend()
                             }
                             true
                         }
@@ -777,7 +825,8 @@ private fun Composer(
             BoxWithConstraints(Modifier.fillMaxWidth()) {
             val roomy = maxWidth >= 372.dp
             Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onAttach, enabled = !running && picked.size < 6) { Icon(Icons.Rounded.Add, "Attach a file") }
+                // The three icons of the bar are one size and sit the same distance from its edges, so the row reads as even.
+                IconButton(onAttach, Modifier.size(BAR_BUTTON), enabled = !running && picked.size < 6) { Icon(Icons.Rounded.Add, "Attach a file", Modifier.size(BAR_ICON)) }
                 Segmented(
                     listOf(false to "Chat", true to "Work"), chat?.agent == true, { if (!running) onMode(it) }, Modifier.alpha(if (locked) 0.6f else 1f),
                     // On a narrow phone the words alone keep the row to one line.
@@ -791,18 +840,18 @@ private fun Composer(
                     val on = speech.listening.value
                     val micTint by animateColorAsState(if (on) cs.primary else cs.onSurfaceVariant, label = "mic")
                     val beat = if (on) pulse() else 1f
-                    IconButton(speech.toggle, Modifier.size(40.dp), enabled = !speech.busy.value) {
-                        if (speech.busy.value) androidx.compose.material3.LoadingIndicator(Modifier.size(22.dp))
-                        else Icon(if (on) Icons.Rounded.GraphicEq else Icons.Rounded.MicNone, if (on) "Stop listening" else "Speak your message", Modifier.size(22.dp).scale(if (on) 0.9f + 0.2f * beat else 1f), tint = micTint)
+                    IconButton(speech.toggle, Modifier.size(BAR_BUTTON), enabled = !speech.busy.value) {
+                        if (speech.busy.value) androidx.compose.material3.LoadingIndicator(Modifier.size(BAR_ICON))
+                        else Icon(if (on) Icons.Rounded.GraphicEq else Icons.Rounded.MicNone, if (on) "Stop listening" else "Speak your message", Modifier.size(BAR_ICON).scale(if (on) 0.9f + 0.2f * beat else 1f), tint = micTint)
                     }
                 }
                 // Send and Stop are bare icons on the bar, with no circle behind them. The arrow takes the theme's colour when
                 // there is something to send and is faint when there is not. While a reply is being written it becomes a grey
                 // square that still stops it: nothing turns red.
                 val tint by animateColorAsState(if (running) cs.onSurfaceVariant else if (canSend) cs.primary else cs.onSurfaceVariant.copy(alpha = 0.4f), label = "sendTint")
-                IconButton({ if (running) onStop() else onSend() }, Modifier.size(40.dp), enabled = running || canSend) {
+                IconButton({ if (running) onStop() else onSend() }, Modifier.size(BAR_BUTTON), enabled = running || canSend) {
                     AnimatedContent(running, transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "sendIcon") { r ->
-                        Icon(if (r) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward, if (r) "Stop" else "Send", Modifier.size(22.dp), tint = tint)
+                        Icon(if (r) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward, if (r) "Stop" else "Send", Modifier.size(BAR_ICON), tint = tint)
                     }
                 }
             }
@@ -824,8 +873,8 @@ fun exportMarkdown(chat: Chat?, messages: List<app.pocketagent.data.Msg>, unpack
 }
 
 
-/** A connected account named in a message with "@", and for GitHub the repositories it is about. */
-data class Mention(val name: String, val repos: List<String> = emptyList())
+/** A connected account or an MCP server named in a message with "@", and for GitHub the repositories it is about. */
+data class Mention(val name: String, val repos: List<String> = emptyList(), val mcp: Boolean = false)
 
 private val AT = Regex("(^|\\s)@(\\w*)$")
 

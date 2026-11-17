@@ -52,7 +52,7 @@ fun ConnectionsSection() {
     val githubOn = remember(settings?.sharedRev) { g.integrations.githubOn() }
     val gmailOn = remember(settings?.sharedRev) { g.integrations.gmailOn() }
 
-    Text("The assistant can use these in any chat: type @github or @gmail, or just ask. It always asks before it sends an email or changes anything on GitHub.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    Text("Type @github, @gmail or @mcp in any chat, or just ask. Nothing is sent or changed without your OK.", Modifier.padding(start = 4.dp, top = 8.dp, bottom = 12.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
 
     // GitHub
     var token by remember { mutableStateOf("") }
@@ -63,7 +63,7 @@ fun ConnectionsSection() {
         if (githubOn) Icon(Icons.Rounded.CheckCircle, "Connected", Modifier.padding(start = 8.dp).size(18.dp), tint = cs.primary)
     }
     if (githubOn) {
-        Text("Connected. It can read your repositories, issues and pull requests, and change them with your OK.", Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        Text("Connected. It reads your repositories, and changes them only with your OK.", Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
         OutlinedButton({ scope.launch { g.setConnection(mapOf(Integrations.GITHUB to null)); ghNote = null } }) { Text("Disconnect GitHub") }
     } else {
         OutlinedTextField(
@@ -99,7 +99,7 @@ fun ConnectionsSection() {
         if (gmailOn) Icon(Icons.Rounded.CheckCircle, "Connected", Modifier.padding(start = 8.dp).size(18.dp), tint = cs.primary)
     }
     if (gmailOn) {
-        Text("Connected as ${g.vault.read(Integrations.GMAIL_USER).orEmpty()}. It can search and read your mail, and send mail with your OK.", Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        Text("Connected as ${g.vault.read(Integrations.GMAIL_USER).orEmpty()}. It reads your mail, and sends only with your OK.", Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
         OutlinedButton({ scope.launch { g.setConnection(mapOf(Integrations.GMAIL_USER to null, Integrations.GMAIL_PASS to null)); gmNote = null } }, Modifier.padding(bottom = 6.dp)) { Text("Disconnect Gmail") }
     } else {
         OutlinedTextField(
@@ -108,7 +108,7 @@ fun ConnectionsSection() {
         )
         OutlinedTextField(
             appPass, { appPass = it; gmNote = null }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("App password") }, placeholder = { Text("16 letters") }, singleLine = true, enabled = !gmBusy,
-            isError = gmNote?.second == true, supportingText = { Text(gmNote?.first ?: "An app password from your Google account, not your normal password. It needs 2-step verification to be on.") },
+            isError = gmNote?.second == true, supportingText = { Text(gmNote?.first ?: "A Google app password, not your normal one. Needs 2-step verification.") },
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), shape = MaterialTheme.shapes.large,
         )
         Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -127,4 +127,6 @@ fun ConnectionsSection() {
             TextButton({ runCatching { uri.openUri("https://myaccount.google.com/apppasswords") } }) { Text("Create an app password") }
         }
     }
+
+    McpSection()
 }

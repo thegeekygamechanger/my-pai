@@ -19,7 +19,8 @@ import java.time.format.DateTimeFormatter
 /** OUTWARD is something that leaves the phone for good (an email, a change on GitHub): it is always asked about. */
 enum class Risk { READ, WRITE, DESTRUCTIVE, OUTWARD }
 
-class ToolSpec(val name: String, val description: String, val risk: Risk, val required: List<String>, val props: JsonObject)
+/** [schema], when given, is the whole input schema as it is (a tool from an MCP server brings its own); otherwise it is built from [props] and [required]. */
+class ToolSpec(val name: String, val description: String, val risk: Risk, val required: List<String>, val props: JsonObject, val schema: JsonObject? = null)
 
 /** The parts of the phone a tool may need; kept behind an interface so the tools run in plain unit tests. */
 interface ToolHost {
@@ -33,7 +34,7 @@ data class ToolOutcome(val text: String, val isError: Boolean = false)
  * The tools that run on the phone. Web search, page fetch and the code sandbox are not here:
  * those run on Anthropic's side and never touch the device.
  */
-class Tools(private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null, val media: Media? = null) {
+class Tools(private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null, val media: Media? = null, val mcp: Mcp? = null) {
 
     private fun prop(type: String, description: String) = buildJsonObject { put("type", type); put("description", description) }
 
@@ -87,11 +88,13 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
      *   and videos. Files, memory and the task list belong to Work.
      */
     fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false): JsonArray = buildJsonArray {
-        for (s in (if (mediaOnly) emptyList() else specs) + (if (sandbox && !mediaOnly) listOf(SANDBOX_SPEC) else emptyList()) + integrations?.specs().orEmpty() + media?.specs().orEmpty()) add(buildJsonObject {
+        // A plain chat has no task list, memory or editing, but it can still look into the workspace and save a file there when asked to.
+        val own = if (mediaOnly) specs.filter { it.name in CHAT_FILE_TOOLS } else specs
+        for (s in own + (if (sandbox) listOf(SANDBOX_SPEC) else emptyList()) + integrations?.specs().orEmpty() + media?.specs().orEmpty() + mcp?.specs().orEmpty()) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
             if (eager) put("eager_input_streaming", true)
-            putJsonObject("input_schema") {
+            if (s.schema != null) put("input_schema", s.schema) else putJsonObject("input_schema") {
                 put("type", "object")
                 put("properties", s.props)
                 putJsonArray("required") { s.required.forEach { add(it) } }
@@ -99,14 +102,14 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         })
     }
 
-    fun risk(name: String, input: JsonObject): Risk = integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
+    fun risk(name: String, input: JsonObject): Risk = mcp?.risk(name) ?: integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
         MEMORY -> if (input.str("command") == "view") Risk.READ else Risk.WRITE
         SANDBOX_PUT -> Risk.READ
         else -> byName[name]?.risk ?: Risk.WRITE
     }
 
     /** One line for the timeline and the approval sheet. */
-    fun describe(name: String, input: JsonObject): String = integrations?.describe(name, input) ?: media?.describe(name, input) ?: when (name) {
+    fun describe(name: String, input: JsonObject): String = mcp?.describe(name) ?: integrations?.describe(name, input) ?: media?.describe(name, input) ?: when (name) {
         "list_files" -> "List " + (input.str("path")?.ifBlank { null } ?: "workspace")
         "read_file" -> "Read " + input.str("path").orEmpty()
         "write_file" -> "Write " + input.str("path").orEmpty()
@@ -159,6 +162,7 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         "copy_to_clipboard" -> { host.copyToClipboard(need(input, "text")); "Copied to the clipboard." }
         MEMORY -> memoryCommand(input)
         else -> when {
+            mcp?.handles(name) == true -> mcp.run(name, input)
             integrations?.handles(name) == true -> integrations.run(name, input)
             media?.handles(name) == true -> media.run(name, input)
             else -> throw ToolError("Unknown tool: $name")
@@ -208,6 +212,8 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
 
     companion object {
         const val MEMORY = "memory"
+        /** The workspace tools a plain chat has: enough to save what was asked for, and to find and read it again. */
+        val CHAT_FILE_TOOLS = setOf("list_files", "read_file", "write_file")
         const val MAX_RESULT = 150_000
         /** Hands a workspace file to the code sandbox as it is. Run by the run loop, because it needs the service. */
         const val SANDBOX_PUT = "send_to_sandbox"

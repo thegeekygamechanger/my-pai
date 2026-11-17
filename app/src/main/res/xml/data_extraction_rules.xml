@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Nothing leaves the device: no cloud backup, no device-to-device transfer. -->
+<!-- Nothing leaves the device: no cloud backup, no device-to-device transfer. Every domain is excluded, so API keys,
+     MCP server tokens and the list of MCP servers are in no backup and no transfer. Keep it that way: a new kind of
+     secret must not be given an include rule here. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" />

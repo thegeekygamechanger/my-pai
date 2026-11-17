@@ -206,8 +206,9 @@ class RunLoopTest {
         assertEquals("Say hello to me please", chat.title)
         assertEquals(100L, chat.inTok); assertEquals(20L, chat.outTok)
         assertTrue(chat.costMicros > 0)
-        // Web search is on by default; a plain chat carries those two tools and nothing that touches the phone.
-        assertEquals(listOf("web_search", "web_fetch"), requests[0].arr("tools")!!.map { (it as JsonObject).str("name") })
+        // A plain chat can save a file when asked (three file tools and the sandbox) and search the web; it gets none of
+        // Work's other tools: no editing, deleting, memory, tasks or connections.
+        assertEquals(listOf("list_files", "read_file", "write_file", "send_to_sandbox", "web_search", "web_fetch", "code_execution"), requests[0].arr("tools")!!.map { (it as JsonObject).str("name") })
         assertEquals(listOf("Hello there" to false), finished.toList())
     }
 

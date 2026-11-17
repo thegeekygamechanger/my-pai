@@ -62,6 +62,9 @@ fun main(args: Array<String>) {
         a.memory.write("me.md", "likes tea")
         a.vault.write(Providers.vaultKey(Providers.ANTHROPIC), "sk-ant-test-key-000000000000")
         a.updateShared { it.copy(customInstructions = "Be brief", name = "Sam", onboarded = true) }
+        // An MCP server and its token belong to the device they were typed on.
+        a.vault.write(app.pocketagent.ai.Mcp.tokenKey("m1"), "mcp-secret-token-0000")
+        a.updateShared { it.copy(mcpServers = listOf(app.pocketagent.ai.McpServer(id = "m1", name = "Weather", url = "https://mcp.example/weather", hasToken = true))) }
         val att = File(a.attach.dir, "pic.jpg").apply { parentFile.mkdirs(); writeBytes(ByteArray(300_000) { (it % 251).toByte() }) }
         a.dao.insert(Msg(chatId = first, role = "user", content = """[{"type":"image","source":{"type":"local","path":"att/pic.jpg","media_type":"image/jpeg"}},{"type":"text","text":"and this photo"}]""", createdAt = System.currentTimeMillis()))
 
@@ -113,6 +116,8 @@ fun main(args: Array<String>) {
         check("a chat deleted on A disappears on B", until { "Groceries" !in titles(b) })
         b.updateShared { it.copy(customInstructions = "Be thorough") }
         check("changed instructions reach A", until { a.settings.value?.customInstructions == "Be thorough" })
+        check("an MCP server and its token stay on the device they were added on", b.settings.value?.mcpServers.isNullOrEmpty() && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null)
+        check("and are still there on that device", a.settings.value?.mcpServers?.singleOrNull()?.name == "Weather" && a.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == "mcp-secret-token-0000")
 
         // --- Incognito: a chat that stays on the device it was written on, and is gone when it is left.
         val secret = a.newIncognitoChat()
@@ -137,12 +142,13 @@ fun main(args: Array<String>) {
         check("A gets what B did meanwhile", until { "Written offline" in titles(a) })
         check("both ends hold the same chats", until { titles(a) == titles(b) })
         check("a chat deleted earlier stays deleted", "Groceries" !in titles(a) && "Groceries" !in titles(b))
+        check("after unlinking and linking again the MCP server is still on one device only", b.settings.value?.mcpServers.isNullOrEmpty() && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && a.settings.value?.mcpServers?.size == 1)
 
         // --- The relay and anyone listening see only ciphertext.
         spyCall.cancel()
         val heard = synchronized(overheard) { overheard.toString() }
         check("the eavesdropper received traffic", heard.length > 1000)
-        check("none of it is readable (no chat text, file text or key)", !heard.contains("MARKER-PLAINTEXT") && !heard.contains("Trip plan") && !heard.contains("sk-ant-test"))
+        check("none of it is readable (no chat text, file text or key)", !heard.contains("MARKER-PLAINTEXT") && !heard.contains("Trip plan") && !heard.contains("sk-ant-test") && !heard.contains("mcp-secret-token") && !heard.contains("mcp.example"))
 
         // --- Up to five devices.
         val more = listOf("c", "d", "e").map { device(it) }

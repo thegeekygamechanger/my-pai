@@ -40,7 +40,7 @@ object AutoModel {
         if (agent) return if (t.length < 80 && !DEMANDING.containsMatchIn(t) && attachments == 0) NORMAL else HARD
         if (isGreeting(t)) return EASY
         // A request for a connected account means tool calls and reading what comes back: not a job for the quick model.
-        val account = t.startsWith("@github") || t.startsWith("@gmail")
+        val account = t.startsWith("@github") || t.startsWith("@gmail") || t.startsWith("@mcp")
         var score = 0
         if (t.length > 1500) score += 2 else if (t.length > 400) score += 1
         if (CODE.containsMatchIn(t)) score += 1

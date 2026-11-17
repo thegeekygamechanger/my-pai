@@ -76,6 +76,8 @@ data class Settings(
     val lastUpdateCheck: Long = 0,
     /** Chats on this device with a reply the person has not looked at yet (a scheduled task's result, a reply that came while they were elsewhere). */
     val unreadChats: List<Long> = emptyList(),
+    /** MCP servers the person added on this device. Their tokens are in the vault, not here, and neither is sent to linked devices. */
+    val mcpServers: List<app.pocketagent.ai.McpServer> = emptyList(),
     val fallbacks: Boolean = true,
     /** The model lists last fetched with the user's keys, by service, so the picker is instant and works offline. */
     val models: Map<String, List<SavedModel>> = emptyMap(),

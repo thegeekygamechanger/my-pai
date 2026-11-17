@@ -157,7 +157,7 @@ class CoreTest {
         assertEquals("fast", body.str("speed"))
         assertEquals("default", body.str("fallbacks"))
         assertTrue("compact-2026-01-12" in betas && "server-side-fallback-2026-07-01" in betas)
-        assertNull("a chat without tools sends no tools field", body["tools"])
+        assertEquals("a chat carries only the tools for saving a file", listOf("list_files", "read_file", "write_file"), body.arr("tools")!!.map { (it as JsonObject).str("name") })
         for (k in listOf("temperature", "top_p", "top_k", "budget_tokens")) assertNull(body[k])
     }
 
@@ -165,7 +165,7 @@ class CoreTest {
         val (body, betas) = RequestBuilder.build(cfg("claude-haiku-4-5", web = true, fast = true), listOf(user("hi")), tools(), emptySet()) { null }
         assertNull(body["thinking"]); assertNull(body["output_config"]); assertNull(body["speed"]); assertNull(body["fallbacks"]); assertNull(body["context_management"])
         assertTrue(betas.isEmpty())
-        assertEquals("web_search_20250305", (body.arr("tools")!![0] as JsonObject).str("type"))
+        assertEquals("web_search_20250305", body.arr("tools")!!.mapNotNull { (it as JsonObject).str("type") }.first())
     }
 
     @Test fun effortIsMappedToWhatTheModelAccepts() {

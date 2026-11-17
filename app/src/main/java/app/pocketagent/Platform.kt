@@ -36,6 +36,12 @@ interface Platform {
     fun shareFile(file: File)
     /** Opens a file in whatever the device uses for that kind of file: a picture viewer, a video player. */
     fun openFile(file: File)
+
+    /**
+     * Puts a copy of a workspace file in the device's Downloads folder, where other apps can reach it.
+     * @return a few words saying where it went, or null if it could not be done here
+     */
+    fun saveCopy(file: File): String? = null
     fun inForeground(): Boolean
 
     /** Called when the first run starts and when the last one ends: Android keeps the process alive meanwhile. */
@@ -59,6 +65,12 @@ interface Platform {
     @Composable fun rememberSpeech(g: Graph, onText: (String) -> Unit, onError: (String) -> Unit): Speech?
 
     val canLock: Boolean
+
+    /**
+     * Starts a local MCP server: a program on this computer, spoken to over its input and output.
+     * Only a computer can; a phone answers null.
+     */
+    fun mcpProgram(command: String): app.pocketagent.ai.McpPipe? = null
     fun authenticate(title: String, onOk: () -> Unit)
     fun setSecureScreen(on: Boolean)
     fun systemBars(dark: Boolean)

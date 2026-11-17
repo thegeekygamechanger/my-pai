@@ -83,6 +83,40 @@ class DesktopPlatform(override val filesDir: File) : Platform {
 
     // A computer does not suspend an app that is merely in the background, so nothing has to keep a run alive.
     // "In front" means the window has the keyboard: minimised, or behind another app, it is not. A test can force the answer.
+    /** A copy in the person's Downloads folder, under a name that is not taken. */
+    override fun saveCopy(file: File): String? = runCatching {
+        val dir = File(System.getProperty("user.home"), "Downloads").apply { mkdirs() }
+        var target = File(dir, file.name)
+        var n = 2
+        while (target.exists()) target = File(dir, file.nameWithoutExtension + " ($n)" + (if (file.extension.isEmpty()) "" else "." + file.extension)).also { n++ }
+        file.copyTo(target)
+        "Saved to Downloads as ${target.name}"
+    }.getOrNull()
+
+    /** Starts the program of a local MCP server. It is run directly, not through a shell, with the words of [command] as its arguments. */
+    override fun mcpProgram(command: String): app.pocketagent.ai.McpPipe? {
+        val words = splitCommand(command)
+        if (words.isEmpty()) return null
+        val process = ProcessBuilder(words).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+        val lines = java.util.concurrent.LinkedBlockingQueue<String>()
+        val ended = java.util.concurrent.atomic.AtomicBoolean(false)
+        Thread({
+            try { process.inputStream.bufferedReader().forEachLine { lines.put(it) } } catch (_: Exception) {} finally { ended.set(true) }
+        }, "mcp-" + words.first().substringAfterLast(File.separatorChar)).apply { isDaemon = true; start() }
+        val out = process.outputStream.bufferedWriter()
+        return object : app.pocketagent.ai.McpPipe {
+            override fun send(line: String) { out.write(line); out.write("\n"); out.flush() }
+            override fun receive(timeoutMs: Long): String? {
+                val until = System.currentTimeMillis() + timeoutMs
+                while (true) {
+                    lines.poll(200, java.util.concurrent.TimeUnit.MILLISECONDS)?.let { return it }
+                    if ((ended.get() && lines.isEmpty()) || System.currentTimeMillis() >= until) return lines.poll()
+                }
+            }
+            override fun close() { runCatching { out.close() }; process.destroy(); if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) process.destroyForcibly() }
+        }
+    }
+
     override fun inForeground(): Boolean = if (System.getProperty("pocketagent.testBackground") == "true") false else frame?.let { it.isVisible && it.isFocused && (it.extendedState and java.awt.Frame.ICONIFIED) == 0 } ?: true
     override fun runsChanged(active: Boolean) {}
     override fun notifyFinished(chat: Chat, preview: String, failed: Boolean, sound: Boolean) =
@@ -293,4 +327,20 @@ fun appDataDir(): File {
     val before = File(base, "Pocket" + "Agent")
     if (!dir.exists() && before.isDirectory) runCatching { before.renameTo(dir) }
     return dir.apply { mkdirs() }
+}
+
+/** Splits a command line into its words: spaces separate them, and single or double quotes keep a phrase together. */
+fun splitCommand(command: String): List<String> {
+    val words = ArrayList<String>()
+    val word = StringBuilder()
+    var quote: Char? = null
+    var open = false
+    for (c in command.trim()) when {
+        quote != null -> if (c == quote) quote = null else word.append(c)
+        c == '"' || c == '\'' -> { quote = c; open = true }
+        c.isWhitespace() -> { if (word.isNotEmpty() || open) words += word.toString(); word.setLength(0); open = false }
+        else -> word.append(c)
+    }
+    if (word.isNotEmpty() || open) words += word.toString()
+    return words
 }
