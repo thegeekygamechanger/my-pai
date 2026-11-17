@@ -91,7 +91,7 @@ fun JoinSyncDialog(onDismiss: () -> Unit, onJoined: () -> Unit) {
         title = { Text("Link this device") },
         text = {
             Column {
-                Text("On the device that is already set up, open Settings, then Sync, and use the code shown there.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
+                Text("On the device already set up, open Settings, Sync, and use the code shown.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
                 CodeEntry(code, { code = it; error = null }, error, !busy)
             }
         },
@@ -160,7 +160,7 @@ fun SyncSection() {
             if (open) Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 QrCode(SyncCode.qr(code, SyncCode.SYNC), 200.dp)
                 CodeText(code, Modifier.padding(top = 12.dp))
-                Text("Scan this with the phone, or type the code on the other device. Anyone with this code can read your chats, so show it only to your own devices.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
+                Text("Scan it, or type the code on the other device. Anyone with the code can read your chats: show it only to your own devices.", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
             } else Box(Modifier.fillMaxWidth())
         }
         Row(Modifier.padding(top = 10.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -172,7 +172,7 @@ fun SyncSection() {
     if (leaving) AlertDialog(
         onDismissRequest = { leaving = false },
         title = { Text("Unlink this device?") },
-        text = { Text("It stops exchanging chats with your other devices. Everything already on it stays.") },
+        text = { Text("It stops syncing with your other devices. What is already on it stays.") },
         confirmButton = { TextButton({ leaving = false; scope.launch { g.sync.leave() } }) { Text("Unlink") } },
         dismissButton = { TextButton({ leaving = false }) { Text("Cancel") } },
     )
@@ -206,7 +206,7 @@ fun ShareChatDialog(chatId: Long, onDismiss: () -> Unit) {
                 Text(
                     when {
                         expired -> "This code has stopped working. Make a new one to share again."
-                        served == 0 -> "Copied. Send it to the other person: when they enter it in My PAI's message box, this chat opens for them, and only this chat. The code works for ten minutes while My PAI is open on this device."
+                        served == 0 -> "Copied. Whoever enters it in My PAI's message box gets this chat, and only this chat. It works for ten minutes while My PAI is open here."
                         else -> "Opened $served time${if (served == 1) "" else "s"}."
                     },
                     Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
@@ -232,7 +232,7 @@ fun OpenSharedDialog(onDismiss: () -> Unit, onOpened: (Long) -> Unit) {
         title = { Text("Open a shared chat") },
         text = {
             Column {
-                Text("Enter the four-character code from the person sharing, while they still have it on screen.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
+                Text("Enter the four-character code while the sharer still has it on screen.", Modifier.padding(bottom = 14.dp), style = MaterialTheme.typography.bodyMedium)
                 CodeEntry(code, { code = it; error = null }, error, !busy)
             }
         },
@@ -244,7 +244,7 @@ fun OpenSharedDialog(onDismiss: () -> Unit, onOpened: (Long) -> Unit) {
                 scope.launch {
                     val id = runCatching { ShareClient.open(g, parsed) }.getOrNull()
                     busy = false
-                    if (id == null) error = "Could not reach the device sharing this chat. Ask them to keep the share screen open and try again." else onOpened(id)
+                    if (id == null) error = "Could not reach the sharing device. Ask them to keep the share screen open, then try again." else onOpened(id)
                 }
             }, enabled = code.isNotBlank() && !busy) { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Text("Open") }
         },

@@ -84,6 +84,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.rounded.Gavel
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.RateReview
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.material.icons.rounded.Code
@@ -304,7 +305,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                     // Making pictures and videos is offered only when one of the person's own keys can do it; otherwise it is not mentioned at all.
                     if (g.keyFor("gemini") != null || g.keyFor("openai") != null || g.keyFor("pollinations") != null) Card("Pictures and videos", Icons.Rounded.Image, listOfNotNull("Gemini".takeIf { g.keyFor("gemini") != null }, "OpenAI".takeIf { g.keyFor("openai") != null }, "Pollinations".takeIf { g.keyFor("pollinations") != null }).joinToString(" · ")) {
                         Text(
-                            "Ask for a picture in any chat and it is made with your own key and shown in the conversation. Videos work with a Gemini or Pollinations key.",
+                            "Ask for a picture in any chat; it is made with your own key. Videos need a Gemini or Pollinations key.",
                             Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant,
                         )
                     }
@@ -350,7 +351,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         Slider(budget, { budget = it }, valueRange = 0f..2000f, steps = 39, onValueChangeFinished = { set { it.copy(budgetK = if (budget < 50f) 0 else budget.toInt()) } })
                     }
                     Card("Reliability", Icons.Rounded.Shield) {
-                        SwitchRow("Summarise long chats", "When a chat gets very long, older messages are condensed so it can keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
+                        SwitchRow("Summarise long chats", "Very long chats condense older messages to keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
                         SwitchRow("Fall back when declined", "If the chosen Claude model declines a request, let another Claude model answer it.", s.fallbacks) { v -> set { it.copy(fallbacks = v) } }
                     }
                 }
@@ -392,7 +393,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                         Label(
                             if (t == null || (t.inTok ?: 0) + (t.outTok ?: 0) == 0L) "Nothing used yet"
                             else "${formatTokens((t.inTok ?: 0) + (t.cacheReadTok ?: 0))} in · ${formatTokens(t.outTok ?: 0)} out" + formatCost(t.costMicros ?: 0).let { if (it.isEmpty()) "" else " · about $it" },
-                            "Across the chats on this device. Cost is an estimate for Claude models from list prices; your account with each service shows the real figure.",
+                            "Across chats on this device. Cost is an estimate from Claude list prices; your account shows the real figure.",
                         )
                     }
                     Card("Data", Icons.Rounded.Storage) {
@@ -411,6 +412,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                     // Offered only while the relay can pass a note on, so the button never leads nowhere.
                     val feedbackOn by androidx.compose.runtime.produceState(false) { value = app.pocketagent.sync.Feedback.available() }
                     if (feedbackOn) Card("Send feedback", Icons.Rounded.RateReview, "Tell the developer what works and what does not") { FeedbackForm() }
+                    LinkRow(Docs.title(Docs.CHANGELOG), Icons.Rounded.NewReleases, "Version ${platform.versionName} and the ones before it") { onDoc(Docs.CHANGELOG) }
                     LinkRow(Docs.title(Docs.TERMS), Icons.Rounded.Gavel) { onDoc(Docs.TERMS) }
                     LinkRow(Docs.title(Docs.PRIVACY), Icons.Rounded.PrivacyTip) { onDoc(Docs.PRIVACY) }
                     LinkRow(Docs.title(Docs.LICENSES), Icons.Rounded.Code) { onDoc(Docs.LICENSES) }
@@ -427,7 +429,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
         AlertDialog(
             onDismissRequest = { removing = null },
             title = { Text("Remove ${p.name}?") },
-            text = { Text(if (connected.size <= 1) "This is the only service set up. Removing its key takes you back to the first screen. Your chats stay." else "Its key is erased from this device and from your linked devices. Your chats stay.") },
+            text = { Text(if (connected.size <= 1) "This is your only service. Removing its key returns you to the first screen. Your chats stay." else "Its key is erased from this device and from your linked devices. Your chats stay.") },
             confirmButton = {
                 TextButton({
                     removing = null
@@ -443,7 +445,7 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
     if (wiping) AlertDialog(
         onDismissRequest = { wiping = false },
         title = { Text("Delete all data?") },
-        text = { Text("Every chat, attachment, workspace file and memory note is erased from this device, and from linked devices when they are next open. This cannot be undone. Your keys and settings stay.") },
+        text = { Text("Every chat, attachment, file and memory note is erased here, and on linked devices when they next open. This cannot be undone. Keys and settings stay.") },
         confirmButton = { TextButton({ wiping = false; scope.launch { g.deleteEverything(); note = "All chats and files deleted." } }) { Text("Delete everything", color = cs.error) } },
         dismissButton = { TextButton({ wiping = false }) { Text("Cancel") } },
     )
@@ -472,8 +474,8 @@ private fun FeedbackForm() {
             }
             Text("Thank you, it is sent", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleMedium)
             Text(
-                if (email.isBlank()) "Your note is on its way to the developer. You left no address, so there will be no reply; send another with your email if you would like one."
-                else "Your note is on its way to the developer. Please allow a few hours for a reply at ${email.trim()}.",
+                if (email.isBlank()) "Your note is on its way. You left no address, so there will be no reply."
+                else "Your note is on its way. Allow a few hours for a reply at ${email.trim()}.",
                 Modifier.padding(top = 6.dp, start = 8.dp, end = 8.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             TextButton({ sent = false; message = ""; problem = "" }, Modifier.padding(top = 8.dp)) { Text("Write another") }
@@ -481,7 +483,7 @@ private fun FeedbackForm() {
         return
     }
 
-    Text("What works, what does not, what you wish it did. It goes straight to the developer.", Modifier.padding(start = 4.dp, bottom = 10.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+    Text("What works, what does not, what you wish it did.", Modifier.padding(start = 4.dp, bottom = 10.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
     OutlinedTextField(
         message, { message = it.take(app.pocketagent.sync.Feedback.MAX); problem = "" }, Modifier.fillMaxWidth().heightIn(min = 132.dp), enabled = !sending,
         placeholder = { Text("Your feedback") }, shape = RoundedCornerShape(20.dp), keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
@@ -493,7 +495,7 @@ private fun FeedbackForm() {
         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
     )
     Text(
-        problem.ifEmpty { "Sent with it: this text, the email if you give one, and the app version (${g.platform.versionName}). Nothing from your chats or files." },
+        problem.ifEmpty { "Sent: this text, your email if given, and the app version (${g.platform.versionName}). Nothing from your chats or files." },
         Modifier.padding(start = 4.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = if (problem.isEmpty()) cs.onSurfaceVariant else cs.error,
     )
     Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {

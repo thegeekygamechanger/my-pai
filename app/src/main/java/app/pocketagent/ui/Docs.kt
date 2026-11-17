@@ -31,16 +31,20 @@ object Docs {
     const val TERMS = "terms"
     const val PRIVACY = "privacy"
     const val LICENSES = "licenses"
+    /** What changed in each version. Its text is written from release-notes/ by scripts/site.py (see Changelog.kt). */
+    const val CHANGELOG = "changelog"
 
     fun title(kind: String) = when (kind) {
         TERMS -> "Terms of use"
         PRIVACY -> "Privacy"
+        CHANGELOG -> "What's new"
         else -> "Open source"
     }
 
     fun text(kind: String): String = when (kind) {
         TERMS -> TERMS_TEXT
         PRIVACY -> PRIVACY_TEXT
+        CHANGELOG -> CHANGELOG_TEXT
         else -> LICENSES_TEXT
     }
 
@@ -55,6 +59,9 @@ Replies come from the service you chose (Anthropic, OpenAI, OpenRouter, Groq, Go
 
 ## What Work mode does
 In Work mode the model can read and write files in the app's workspace folder, keep memory notes, search the web and run code on the service's side. It asks before changing things unless you choose "Full auto". You are responsible for what you ask it to do and for checking its work.
+
+## MCP servers
+You can add tools from MCP servers. Those servers are run by other people, not by My PAI: their own terms apply to what you send them, and you add them at your own risk. The app asks you before every call to one.
 
 ## Answers can be wrong
 AI models make mistakes and can state false things with confidence. Do not rely on a reply for medical, legal, financial or safety decisions without checking it with a qualified person or a trusted source.
@@ -77,7 +84,7 @@ Your chats, attachments, workspace files, memory notes and settings are stored o
 
 ## What leaves your device
 - **Your messages and attachments** go straight from the app to the AI service you chose, over HTTPS, so it can reply. That service handles them under its own privacy policy. If you choose Ollama, they go only to the Ollama you point the app at, on your own computer or network, at the address you enter; that connection is plain http unless you set it up otherwise.
-- **Web search and the code sandbox** run on the AI service's side. In Work with a Claude model, the sandbox is where documents are converted and charts and office files are made: the text or the workspace file you ask it to work on is sent there, and the files it makes are fetched back and saved on your device. A file sent there is kept in your own account at the AI service for up to 30 days, then removed.
+- **Web search and the code sandbox** run on the AI service's side. With a Claude model, in Chat and in Work, the sandbox is where documents are converted and charts and office files are made: the text or the file you ask it to work on is sent there, and the files it makes are fetched back and saved on your device. A file sent there is kept in your own account at the AI service for up to 30 days, then removed.
 - **An incognito chat** is kept only for as long as it is open: it is not listed, not searchable, not sent to your linked devices and cannot be shared, and it is erased when you leave it or when the app next starts. Its messages still go to the AI service you chose, which handles them under its own policy.
 - **Feedback** you send from Settings contains what you wrote, the email address you give for a reply (if any) and the app version. It passes through the relay, which keeps none of it, to an email delivery service and on to the developer's mailbox. Nothing from your chats, files or keys goes with it.
 - **Pictures and videos**, only when you ask for one: the description of what to create goes to Google (Gemini), OpenAI or Pollinations with your own key for that service, and the result is saved on your device. Without such a key the app does not make pictures or videos.
@@ -87,6 +94,9 @@ Your chats, attachments, workspace files, memory notes and settings are stored o
 
 ## GitHub and Gmail
 If you connect GitHub or Gmail, the token or app password is stored encrypted on your device like your other keys. In Work mode the assistant can then read from that account, and what it reads is sent to the AI service as part of the conversation. It asks you every time before it sends an email or changes anything on GitHub. Disconnect at any time in Settings, Connections, and revoke the token or app password in your GitHub or Google account.
+
+## MCP servers
+An MCP server is a service run by someone else (or a program on your own computer) that gives the assistant extra tools. The app contacts only the servers you add yourself, and only to read their list of tools and to make a call you approved. Before every call you are shown the server, the tool and exactly what will be sent, and nothing is sent until you say yes. What is sent goes to that server and is handled under its own policy, not this one; what it answers is sent on to the AI service as part of the conversation. A token you paste for a server is stored encrypted on the device like your keys, is sent only to that server, and is never synced to your other devices or put in a backup. Remove a server at any time in Settings, Connections.
 
 ## Scheduled tasks
 A scheduled task starts a chat by itself at the time you set, on the device where you created it. It uses your keys and your connections exactly as a chat you start yourself.

@@ -154,7 +154,7 @@ fun ProviderKeyFields(provider: Provider, onProvider: (Provider) -> Unit, key: S
         OutlinedTextField(
             ollamaUrl, { ollamaUrl = it.trim(); onProvider(Providers.ollama(ollamaUrl)) }, Modifier.fillMaxWidth().padding(top = 12.dp),
             label = { Text("Ollama address") }, placeholder = { Text(Providers.OLLAMA_URL) }, singleLine = true, enabled = enabled, shape = MaterialTheme.shapes.large,
-            supportingText = { Text(if (LocalGraph.current.platform.isDesktop) "Where Ollama listens. On this computer that is the address already filled in." else "Ollama runs on a computer. Enter that computer's address on your Wi-Fi, for example http://192.168.1.20:11434/v1, and start Ollama there with OLLAMA_HOST=0.0.0.0 so the phone can reach it.") },
+            supportingText = { Text(if (LocalGraph.current.platform.isDesktop) "Where Ollama listens. On this computer that is the address already filled in." else "Ollama runs on a computer. Enter its Wi-Fi address, such as http://192.168.1.20:11434/v1, and start Ollama there with OLLAMA_HOST=0.0.0.0.") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
         )
     }

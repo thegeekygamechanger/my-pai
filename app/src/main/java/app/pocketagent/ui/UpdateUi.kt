@@ -60,7 +60,7 @@ fun UpdateSection() {
                 UpdateState.UpToDate -> "Version ${g.platform.versionName} is the newest."
                 is UpdateState.Available -> "Version ${st.info.version} is available." + st.info.notes.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.let { "\n$it" }.orEmpty()
                 is UpdateState.Downloading -> "Downloading version ${st.info.version} from GitHub: ${st.percent}%"
-                is UpdateState.NeedsPermission -> "Android needs your OK, once, before the app can install its own updates. Allow it on the next screen, then come back."
+                is UpdateState.NeedsPermission -> "Android needs your OK once before the app can update itself. Allow it on the next screen, then come back."
                 is UpdateState.Confirming -> if (g.platform.isDesktop) "The update is starting. This app will close." else "Confirm the update in the window Android shows."
                 is UpdateState.Failed -> st.message
             },
