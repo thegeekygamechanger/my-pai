@@ -16,6 +16,8 @@ No account, ever: there is no sign-in, no email, no phone number and no tracking
 - **My PAI as an MCP server.** On a computer, other agents on that computer can read your files, memory notes and tasks if you turn it on: read-only, loopback only, with a token, and every request asks you.
 - **Routines, a backup model, offline mode.** A scheduled task can run several steps one after another. A backup model takes over when a service fails or hits a limit, and says so. Offline mode keeps everything on your device and your own network.
 - **Share a setup.** Hand your servers, routines and instructions to someone with a four-character code; tokens and keys are never included.
+- **Built in, and yours to change.** Settings, Tools lists the app's own tools (files, search, web pages, tasks, clipboard) with a switch each, and comes with two public MCP servers, DeepWiki and Context7, plus suggestions. None is contacted until you approve a call; any can be removed and added back.
+- **Files open in the app.** Markdown, text, pictures, PDFs (on a phone) and the words of Word, Excel and PowerPoint files are shown by My PAI itself.
 - **Incognito chat.** A chat that is in no history, is never synced or shared, and is erased when you leave it.
 - **Pictures and videos, with your own key.** With a Gemini, OpenAI or Pollinations key added, ask for a picture in any chat; short videos need a Gemini or Pollinations key. With none of those keys the feature is not shown at all.
 - **Keeps working.** Several chats and pieces of work can run at once and carry on when you switch apps.

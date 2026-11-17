@@ -1,0 +1,6 @@
+An improved 1.1.1:
+- Settings fit on one screen: twelve tiles instead of a long list.
+- Files open inside My PAI: Markdown, text, pictures, PDFs and Office files.
+- Clear all in History.
+- Tools you can switch on and off, with new ones: find in files, move files, open a web page.
+- Two public MCP servers ready from the start; none is contacted until you approve a call.
