@@ -1,0 +1,6 @@
+New: MCP servers. Add tools from other services in Settings, Connections, then type @mcp in any chat. Every call asks you first.
+New: read a file while it is being written; Stop keeps what was written.
+New: save files from an ordinary chat ("save this as notes.md", "make a PDF of that").
+New: Download and Share buttons in Files.
+New: What's new page in Settings.
+Tidier message bar and shorter wording throughout.

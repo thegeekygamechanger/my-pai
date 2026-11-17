@@ -10,6 +10,9 @@ Clear answers with web search, images and PDFs. You see the answer, not a wall o
 Give it a task and it goes step by step with files in a private workspace, the web, and your GitHub and Gmail if you connect them. With a Claude key it can also make and convert files (a PDF from your notes, a spreadsheet, a chart or a diagram) and save them to your workspace. It always asks before it sends an email or changes anything.
 
 <b>Everything else</b>
+• MCP servers: add tools from other services, type @mcp in a chat, and approve every call before it is made
+• Save a file from any chat, read it while it is being written, and download or share it from Files
+• Incognito chat that is never saved or synced
 • Scheduled tasks that run by themselves and notify you
 • Pictures on request, with your own Gemini, OpenAI or Pollinations key
 • Voice typing

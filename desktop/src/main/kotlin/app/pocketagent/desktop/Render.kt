@@ -117,6 +117,13 @@ fun main(args: Array<String>) {
                 settle(60)
                 scene.sendPointerEvent(PointerEventType.Release, at, button = androidx.compose.ui.input.pointer.PointerButton.Secondary); settle(900)
             }
+            // "scroll:x,y,lines" turns the mouse wheel over a point: a positive number moves down the page.
+            s.startsWith("scroll:") -> s.removePrefix("scroll:").split(',').let {
+                val at = Offset(it[0].toFloat(), it[1].toFloat())
+                scene.sendPointerEvent(PointerEventType.Move, at)
+                scene.sendPointerEvent(PointerEventType.Scroll, at, scrollDelta = Offset(0f, it[2].toFloat()))
+                settle(500)
+            }
             s.contains(',') -> s.split(',').let { click(it[0].toFloat(), it[1].toFloat()) }
             else -> shot(s)
         }
