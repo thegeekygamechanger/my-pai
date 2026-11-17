@@ -1,6 +1,6 @@
 package app.pocketagent.desktop
 
-import app.pocketagent.ai.guarded
+import app.pocketagent.ai.appClient
 import app.pocketagent.ai.parseObject
 import app.pocketagent.ai.str
 import okhttp3.OkHttpClient
@@ -53,7 +53,7 @@ object OfflineSpeech {
         val work = File(target.parentFile.apply { mkdirs() }, pack.model + ".part")
         work.deleteRecursively()
         work.mkdirs()
-        val http = OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+        val http = appClient().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
         try {
             http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) throw IOException("The pack could not be fetched (error ${resp.code}).")

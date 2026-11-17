@@ -34,7 +34,7 @@ class AndroidUpdates(private val g: Graph, private val app: Application) : Updat
         if (!force && (!s.autoUpdate || System.currentTimeMillis() - s.lastUpdateCheck < Updates.AUTO_CHECK_MS - 60_000)) return
         state.value = UpdateState.Checking
         try {
-            val info = Updates.latest(g.platform.versionName) { names -> names.firstOrNull { it.endsWith(".apk") } }
+            val info = Updates.latest(g.platform.updateVersion) { names -> names.firstOrNull { it.endsWith(".apk") } }
             g.settingsStore.update { it.copy(lastUpdateCheck = System.currentTimeMillis()) }
             state.value = if (info != null) UpdateState.Available(info) else UpdateState.UpToDate
         } catch (e: Exception) {

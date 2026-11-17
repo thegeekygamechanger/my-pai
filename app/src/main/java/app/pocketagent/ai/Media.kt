@@ -39,7 +39,7 @@ class Media(
 ) {
     // A video can take minutes to come back, so reads are allowed to wait far longer than for ordinary calls.
     private val http by lazy {
-        OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(10, TimeUnit.MINUTES).writeTimeout(60, TimeUnit.SECONDS).callTimeout(12, TimeUnit.MINUTES).build()
+        appClient().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(10, TimeUnit.MINUTES).writeTimeout(60, TimeUnit.SECONDS).callTimeout(12, TimeUnit.MINUTES).build()
     }
 
     private fun key(provider: String): String? = secret(Providers.vaultKey(provider))?.takeIf { it.isNotBlank() }

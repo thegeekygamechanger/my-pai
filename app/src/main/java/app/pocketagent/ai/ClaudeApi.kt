@@ -21,7 +21,7 @@ import kotlin.coroutines.coroutineContext
  * Android, and the JVM one would add tens of megabytes to the app.
  */
 class ClaudeApi(private val baseUrl: () -> String) {
-    private val http = OkHttpClient.Builder().guarded()
+    private val http = appClient()
         // Never carried from an https address to a plain http one, key and all.
         .followSslRedirects(false)
         .connectTimeout(30, TimeUnit.SECONDS)

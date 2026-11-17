@@ -1,6 +1,6 @@
 package app.pocketagent.sync
 
-import app.pocketagent.ai.guarded
+import app.pocketagent.ai.appClient
 import app.pocketagent.ai.parseObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -265,7 +265,7 @@ class RelayLink(private val baseUrl: () -> String, val room: String, val deviceI
         const val MAX_POST = 250_000
         const val MAX_PARTS = 2000
         private val BYTES = "application/octet-stream".toMediaType()
-        private val http = OkHttpClient.Builder().guarded()
+        private val http = appClient()
         // Never carried from an https address to a plain http one, key and all.
         .followSslRedirects(false)
             .connectTimeout(20, TimeUnit.SECONDS)

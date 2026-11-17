@@ -35,7 +35,7 @@ class DesktopUpdates(private val g: Graph) : Updates {
         if (!force && (!s.autoUpdate || System.currentTimeMillis() - s.lastUpdateCheck < Updates.AUTO_CHECK_MS - 60_000)) return
         state.value = UpdateState.Checking
         try {
-            val info = Updates.latest(g.platform.versionName) { names ->
+            val info = Updates.latest(g.platform.updateVersion) { names ->
                 val wanted = if (windows) listOf(".exe", ".msi") else if (installDir() != null) listOf(".tar.gz", ".deb") else listOf(".deb", ".tar.gz")
                 wanted.firstNotNullOfOrNull { ext -> names.firstOrNull { it.endsWith(ext, ignoreCase = true) && (windows || it.contains("linux", true) || ext == ".deb") } }
             }

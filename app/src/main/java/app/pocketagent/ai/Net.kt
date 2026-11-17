@@ -34,3 +34,12 @@ object Net {
 
 /** Every client of the app is built through this, so every request passes the offline gate. */
 fun OkHttpClient.Builder.guarded(): OkHttpClient.Builder = addInterceptor(Net.gate)
+
+/**
+ * The one client the others are cut from. They differ in their timeouts but share its connections and its few
+ * threads, instead of each keeping a pool and a set of threads of its own.
+ */
+private val shared: OkHttpClient by lazy { OkHttpClient.Builder().guarded().build() }
+
+/** A builder for a client of the app's: behind the offline gate, and sharing connections with all the others. */
+fun appClient(): OkHttpClient.Builder = shared.newBuilder()

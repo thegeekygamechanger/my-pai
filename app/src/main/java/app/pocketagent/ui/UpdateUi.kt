@@ -31,12 +31,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.pocketagent.LocalGraph
 import app.pocketagent.update.UpdateState
+import app.pocketagent.update.Updates
 import kotlinx.coroutines.launch
 
+/** How an update is named to the person: a newer version by its number, a later build of the version they have as an update to it. */
+private fun offered(current: String, version: String): String = Updates.shown(version).let { if (it == current) "An update to version $it" else "Version $it" }
+
 fun updateSummary(state: UpdateState): String = when (state) {
-    is UpdateState.Available -> "Version ${state.info.version} is ready"
+    is UpdateState.Available -> "Version ${Updates.shown(state.info.version)} is ready"
     is UpdateState.Downloading -> "Downloading ${state.percent}%"
-    is UpdateState.Confirming -> "Installing ${state.info.version}"
+    is UpdateState.Confirming -> "Installing ${Updates.shown(state.info.version)}"
     is UpdateState.NeedsPermission -> "Needs your permission"
     UpdateState.UpToDate -> "Up to date"
     else -> ""
@@ -58,8 +62,8 @@ fun UpdateSection() {
                 UpdateState.Idle -> "You have version ${g.platform.versionName}."
                 UpdateState.Checking -> "Looking on GitHub…"
                 UpdateState.UpToDate -> "Version ${g.platform.versionName} is the newest."
-                is UpdateState.Available -> "Version ${st.info.version} is available." + st.info.notes.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.let { "\n$it" }.orEmpty()
-                is UpdateState.Downloading -> "Downloading version ${st.info.version} from GitHub: ${st.percent}%"
+                is UpdateState.Available -> "${offered(g.platform.versionName, st.info.version)} is available." + st.info.notes.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.let { "\n$it" }.orEmpty()
+                is UpdateState.Downloading -> "Downloading version ${Updates.shown(st.info.version)} from GitHub: ${st.percent}%"
                 is UpdateState.NeedsPermission -> "Android needs your OK once before the app can update itself. Allow it on the next screen, then come back."
                 is UpdateState.Confirming -> if (g.platform.isDesktop) "The update is starting. This app will close." else "Confirm the update in the window Android shows."
                 is UpdateState.Failed -> st.message
@@ -96,7 +100,7 @@ fun UpdateBanner(modifier: Modifier = Modifier) {
                 Icon(Icons.Rounded.SystemUpdateAlt, null, Modifier.size(20.dp))
                 Text(
                     when (st) {
-                        is UpdateState.Available -> "Version ${st.info.version} is ready. Tap to update."
+                        is UpdateState.Available -> "${offered(g.platform.versionName, st.info.version)} is ready. Tap to update."
                         is UpdateState.Downloading -> "Downloading the update: ${st.percent}%"
                         else -> ""
                     },

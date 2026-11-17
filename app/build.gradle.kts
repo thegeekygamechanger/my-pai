@@ -24,8 +24,11 @@ android {
         applicationId = "app.mypai"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
+        versionCode = 8
         versionName = "1.1.1"
+        // A later build of the same version: people who already have 1.1.1 are offered it, and the version they see stays
+        // the same. Keep in step with appRevision in desktop/build.gradle.kts; back to 0 when versionName goes up.
+        buildConfigField("int", "REVISION", "1")
         vectorDrawables { useSupportLibrary = true }
     }
 

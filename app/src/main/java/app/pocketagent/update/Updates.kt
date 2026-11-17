@@ -1,6 +1,6 @@
 package app.pocketagent.update
 
-import app.pocketagent.ai.guarded
+import app.pocketagent.ai.appClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -42,7 +42,7 @@ interface Updates {
         const val PAGE = "https://github.com/$REPO/releases/latest"
         /** How often the app looks for a newer version by itself. One small request, so it can afford to be often. */
         const val AUTO_CHECK_MS = 30 * 60_000L
-        val http: OkHttpClient by lazy { OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
+        val http: OkHttpClient by lazy { appClient().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build() }
 
         /** True when version [candidate] is newer than [current] ("1.10.0" beats "1.9.3"). */
         fun isNewer(candidate: String, current: String): Boolean {
@@ -54,6 +54,9 @@ interface Updates {
             }
             return false
         }
+
+        /** A release's version as people are shown it: "1.1.1-1", a later build of 1.1.1, is still 1.1.1 to them. */
+        fun shown(version: String): String = version.substringBefore('-')
 
         /** The names a release's files always have, for version [v]. */
         fun fileNames(v: String) = listOf("MyPAI-$v.apk", "MyPAI-$v-windows-x64-setup.exe", "MyPAI-$v-windows-x64.msi", "MyPAI-$v-linux-x64.tar.gz", "MyPAI-$v-linux-x64.deb")
