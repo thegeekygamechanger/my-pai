@@ -36,7 +36,8 @@ object OpenAiCompat {
     /** The phone's tools as "function" tools. The memory tool, which Claude knows natively, is spelled out here. */
     fun tools(cfg: RunConfig, clientTools: Tools?, focus: ToolFocus? = null): JsonArray = buildJsonArray {
         if (clientTools == null) return@buildJsonArray
-        for (t in clientTools.definitions(eager = false, mediaOnly = !cfg.agent, focus = focus)) {
+        // These services have no web tools of their own, so the app's own page reader is offered.
+        for (t in clientTools.definitions(eager = false, mediaOnly = !cfg.agent, focus = focus, pages = true)) {
             val o = t as JsonObject
             add(buildJsonObject {
                 put("type", "function")
@@ -220,7 +221,7 @@ class OpenAiAssembler : LiveReply {
 }
 
 class OpenAiApi {
-    private val http = OkHttpClient.Builder().guarded()
+    private val http = appClient()
         // Never carried from an https address to a plain http one, key and all.
         .followSslRedirects(false)
         .connectTimeout(30, TimeUnit.SECONDS)

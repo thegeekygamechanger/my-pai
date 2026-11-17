@@ -74,13 +74,13 @@ private suspend fun setupChecks(a: Graph, newcomer: Graph, check: (String, Boole
     delay(600)
     val offer = ShareClient.fetch(newcomer, setupHost.code)
     check("it arrives as a setup, not as a chat", offer?.setup != null && offer.messages.isEmpty() && offer.by == "Asha")
-    check("nothing is added until the person agrees", newcomer.settings.value?.mcpServers.isNullOrEmpty() && newcomer.settings.value?.schedules.isNullOrEmpty())
+    check("nothing is added until the person agrees", newcomer.settings.value?.mcpServers.orEmpty().none { !app.pocketagent.ai.McpPresets.isPreset(it.id) } && newcomer.settings.value?.schedules.isNullOrEmpty())
     val setupSaid = offer?.setup?.let { newcomer.addSetup(it, instructions = false) }.orEmpty()
     val ns = newcomer.settingsStore.flow.first()
-    check("the server arrives switched off, without a token, and nothing was contacted" + " ($setupSaid)", ns.mcpServers.singleOrNull()?.let { it.name == "Weather" && !it.on && !it.hasToken && it.wantsToken && it.tools.isEmpty() } == true)
+    check("the server arrives switched off, without a token, and nothing was contacted" + " ($setupSaid)", ns.mcpServers.singleOrNull { !app.pocketagent.ai.McpPresets.isPreset(it.id) }?.let { it.name == "Weather" && !it.on && !it.hasToken && it.wantsToken && it.tools.isEmpty() } == true)
     check("the routine arrives with its steps, to be run by hand", ns.schedules.singleOrNull()?.let { it.title == "Morning brief" && it.steps == listOf("Then today's weather") && it.repeat == "never" } == true)
     check("their instructions are not added unless asked for", ns.customInstructions.isEmpty())
-    check("adding the same setup again adds nothing twice", offer?.setup?.let { newcomer.addSetup(it, instructions = true) }.orEmpty().contains("instructions") && newcomer.settingsStore.flow.first().let { it.mcpServers.size == 1 && it.schedules.size == 1 && it.customInstructions == "Be brief" })
+    check("adding the same setup again adds nothing twice", offer?.setup?.let { newcomer.addSetup(it, instructions = true) }.orEmpty().contains("instructions") && newcomer.settingsStore.flow.first().let { it.mcpServers.count { m -> !app.pocketagent.ai.McpPresets.isPreset(m.id) } == 1 && it.schedules.size == 1 && it.customInstructions == "Be brief" })
     setupHost.stop()
 }
 
@@ -204,7 +204,7 @@ fun main(args: Array<String>) {
         check("A gets what B did meanwhile", until { "Written offline" in titles(a) })
         check("both ends hold the same chats", until { titles(a) == titles(b) })
         check("a chat deleted earlier stays deleted", "Groceries" !in titles(a) && "Groceries" !in titles(b))
-        check("after unlinking and linking again B still has the server's name and still no token", mcpOn(b, "m1") != null && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && a.settings.value?.mcpServers?.size == 1)
+        check("after unlinking and linking again B still has the server's name and still no token", mcpOn(b, "m1") != null && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && a.settings.value?.mcpServers?.count { !app.pocketagent.ai.McpPresets.isPreset(it.id) } == 1)
 
         // --- The relay and anyone listening see only ciphertext.
         spyCall.cancel()

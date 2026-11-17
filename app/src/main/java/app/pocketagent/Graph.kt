@@ -103,7 +103,11 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         override fun origin(name: String) = bridge.origin(name)
         override fun run(name: String, input: kotlinx.serialization.json.JsonObject) = bridge.run(name, input)
     }
-    val tools = Tools(workspace, memory, toolHost, integrations, media, mcp, lentTools, app.pocketagent.data.UndoStore(File(filesDir, "undo")), activity)
+    val tools = Tools(workspace, memory, toolHost, integrations, media, mcp, lentTools, app.pocketagent.data.UndoStore(File(filesDir, "undo")), activity) { settings.value?.toolsOff.orEmpty().toSet() }
+
+    /** A file to show inside the app, over whatever screen is open: what "Open" on a file leads to. */
+    val fileOnScreen = MutableStateFlow<File?>(null)
+    fun viewFile(file: File) { fileOnScreen.value = file }
 
     /** Takes back the change one tool call made to a file, and lets linked devices know the file changed. */
     fun undoTool(callId: String): String? = tools.undo(callId)?.also { sync.filesMayHaveChanged() }
@@ -255,7 +259,8 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
 
     /** Asks every switched-on server that has not been asked since the app started, so the screens can say which are connected. */
     fun checkMcp() {
-        val waiting = settings.value?.mcpServers.orEmpty().filter { it.on && (mcpStatus.value[it.id] ?: app.pocketagent.ai.McpStatus.UNKNOWN) == app.pocketagent.ai.McpStatus.UNKNOWN }
+        // A server the app came with is not contacted just because a list was opened: only when the person uses it or connects it.
+        val waiting = settings.value?.mcpServers.orEmpty().filter { it.on && !it.untouched && (mcpStatus.value[it.id] ?: app.pocketagent.ai.McpStatus.UNKNOWN) == app.pocketagent.ai.McpStatus.UNKNOWN }
         waiting.forEach { s -> scope.launch { connectMcp(s.id) } }
     }
 
@@ -309,6 +314,17 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         }
         if (remote) sync.sharedSettingsChanged()
         bridge.advertise()
+    }
+
+    /** Puts back one of the public servers the app knows of, as it is when first listed: switched on, and not contacted. */
+    suspend fun addPreset(id: String) {
+        val p = app.pocketagent.ai.McpPresets.ALL.firstOrNull { it.id == id } ?: return
+        val now = System.currentTimeMillis()
+        settingsStore.update { s ->
+            if (s.mcpServers.any { it.id == id }) s
+            else s.copy(mcpServers = s.mcpServers + app.pocketagent.ai.McpPresets.server(p).copy(changedAt = now), mcpGone = s.mcpGone - id, sharedRev = now)
+        }
+        sync.sharedSettingsChanged()
     }
 
     /**
@@ -438,7 +454,7 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         val parts = listOfNotNull(
             "$servers MCP server${if (servers == 1) "" else "s"}".takeIf { servers > 0 }, "$routines routine${if (routines == 1) "" else "s"}".takeIf { routines > 0 }, "the instructions".takeIf { instr },
         )
-        return if (parts.isEmpty()) "Nothing new: you already have all of it." else "Added " + parts.joinToString(", ") + "." + (if (servers > 0) " Connect each server in Settings, Connections." else "")
+        return if (parts.isEmpty()) "Nothing new: you already have all of it." else "Added " + parts.joinToString(", ") + "." + (if (servers > 0) " Connect each server in Settings, Tools." else "")
     }
 
     suspend fun setConnection(values: Map<String, String?>) {
@@ -500,6 +516,22 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         dao.deleteChat(id)
     }
 
+    /**
+     * Clears History: every chat and its attachments, here and on linked devices. Files in the workspace, memory notes,
+     * tasks and settings stay. Chats that are being answered right now are stopped first.
+     * @return how many chats were removed
+     */
+    suspend fun clearHistory(): Int {
+        val all = db.dao().allChats()
+        all.forEach { deleteChat(it.id) }
+        return all.size
+    }
+
+    /** Hands memory the app is not using back to the system: called when the app has settled after starting, and when it goes to the background. */
+    fun trimMemory() {
+        platform.trimMemory()
+    }
+
     /** Removes every chat, attachment, workspace file and memory note. The API key and settings stay. */
     suspend fun deleteEverything() {
         runs.stopAll()
@@ -522,6 +554,11 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
             // Empty chats that were opened and never used are not worth keeping.
             db.dao().allChats().filter { it.title.isBlank() && it.updatedAt == it.createdAt }.forEach { c ->
                 if (db.dao().messages(c.id).isEmpty() && !runs.isRunning(c.id)) db.dao().deleteChat(c.id)
+            }
+            // The public servers the app comes with are listed once; one the person removed is not brought back.
+            settingsStore.update { s ->
+                if (s.presets >= app.pocketagent.ai.McpPresets.VERSION) s
+                else s.copy(mcpServers = s.mcpServers + app.pocketagent.ai.McpPresets.missing(s.mcpServers, s.mcpGone), presets = app.pocketagent.ai.McpPresets.VERSION)
             }
             sync.start()
             scheduler.start()

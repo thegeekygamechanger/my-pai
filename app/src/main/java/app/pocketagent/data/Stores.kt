@@ -83,6 +83,10 @@ data class Settings(
     val unreadChats: List<Long> = emptyList(),
     /** MCP servers the person added. Names and addresses reach linked devices; tokens are in each device's vault and never do. */
     val mcpServers: List<app.pocketagent.ai.McpServer> = emptyList(),
+    /** Which set of the app's own default servers has been added here (see McpPresets.VERSION); they are added once, so a removed one stays removed. */
+    val presets: Int = 0,
+    /** Groups of the app's own tools the person switched off (see Tools.GROUPS). */
+    val toolsOff: List<String> = emptyList(),
     /** MCP servers removed here or on a linked device, and when, so a removal is not undone by an older copy elsewhere. */
     val mcpGone: Map<String, Long> = emptyMap(),
     val fallbacks: Boolean = true,

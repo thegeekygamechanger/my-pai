@@ -42,6 +42,26 @@ class Workspace(val root: File) {
         return out.toString().trimEnd()
     }
 
+    /** Every line, in every text file under [path], that contains [query] (letter case ignored): "file:line: text", at most [MAX_HITS]. */
+    fun search(query: String, path: String = ""): String {
+        val q = query.trim()
+        if (q.isEmpty()) throw ToolError("Give some text to look for.")
+        val dir = resolve(path)
+        if (!dir.exists()) throw ToolError("No such folder: ${path.ifBlank { "." }}")
+        val hits = ArrayList<String>()
+        var files = 0
+        for (f in dir.walkTopDown().filter { it.isFile && it.length() <= MAX_SEARCHED }.take(MAX_LIST * 4)) {
+            if (hits.size >= MAX_HITS) break
+            val bytes = runCatching { f.readBytes() }.getOrNull() ?: continue
+            if (bytes.take(2048).any { it == 0.toByte() }) continue
+            files++
+            String(bytes, Charsets.UTF_8).lineSequence().forEachIndexed { i, line ->
+                if (hits.size < MAX_HITS && line.contains(q, ignoreCase = true)) hits += "${relative(f)}:${i + 1}: ${line.trim().take(200)}"
+            }
+        }
+        return if (hits.isEmpty()) "Nothing in $files files contains \"$q\"." else hits.joinToString("\n") + (if (hits.size >= MAX_HITS) "\n... more matches not shown" else "")
+    }
+
     /** Text of a file with line numbers. [offset] is the first line (1-based), [limit] the number of lines. */
     fun read(path: String, offset: Int? = null, limit: Int? = null): String {
         val f = resolve(path)
@@ -112,6 +132,8 @@ class Workspace(val root: File) {
     }
 
     companion object {
+        const val MAX_HITS = 60
+        const val MAX_SEARCHED = 1024L * 1024
         const val MAX_LIST = 400
         const val MAX_LINES = 2000
         const val MAX_READ_BYTES = 4_000_000L

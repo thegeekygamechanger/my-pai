@@ -179,7 +179,7 @@ class CoreTest {
         val t = tools()
         val (a, _) = RequestBuilder.build(cfg(agent = true, web = true), listOf(user("hi")), t, emptySet()) { null }
         val names = a.arr("tools")!!.map { (it as JsonObject).str("name") }
-        assertEquals(listOf("list_files", "read_file", "write_file", "edit_file", "delete_file", "update_tasks", "get_time", "copy_to_clipboard", "memory", "web_search", "web_fetch"), names)
+        assertEquals(listOf("list_files", "read_file", "write_file", "edit_file", "delete_file", "search_files", "move_file", "update_tasks", "get_time", "copy_to_clipboard", "memory", "web_search", "web_fetch"), names)
         assertEquals(JsonPrimitive(true), (a.arr("tools")!![2] as JsonObject)["eager_input_streaming"])
         val (b, betas) = RequestBuilder.build(cfg(agent = true), listOf(user("hi")), t, setOf(Feature.EAGER, Feature.COMPACTION, Feature.FALLBACKS, Feature.CACHE)) { null }
         assertNull((b.arr("tools")!![2] as JsonObject)["eager_input_streaming"])

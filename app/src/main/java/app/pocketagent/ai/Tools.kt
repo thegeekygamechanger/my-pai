@@ -54,7 +54,11 @@ class Tools(
     val bridge: OutsideTools? = null,
     private val undo: app.pocketagent.data.UndoStore? = null,
     val log: ActivityLog? = null,
+    /** The groups of the app's own tools the person switched off in Settings (see [GROUPS]). */
+    private val off: () -> Set<String> = { emptySet() },
 ) {
+    private fun switchedOff(name: String): Boolean = off().let { gone -> gone.isNotEmpty() && GROUPS.any { it.id in gone && name in it.tools } }
+
     private val outside: List<OutsideTools> get() = listOfNotNull(mcp, bridge)
     private fun outside(name: String): OutsideTools? = outside.firstOrNull { it.handles(name) }
 
@@ -93,6 +97,17 @@ class Tools(
         ToolSpec("delete_file", "Delete a file or folder from the workspace. This cannot be undone.", Risk.DESTRUCTIVE, listOf("path"), buildJsonObject {
             put("path", prop("string", "File or folder path relative to the workspace."))
         }),
+        ToolSpec("search_files", "Find text in the workspace: returns every line that contains it, with the file and line number. Use it to find where something is before reading whole files.", Risk.READ, listOf("query"), buildJsonObject {
+            put("query", prop("string", "The text to look for. Letter case is ignored."))
+            put("path", prop("string", "Folder to look in. Leave out for the whole workspace."))
+        }),
+        ToolSpec("move_file", "Move or rename a file or folder in the workspace.", Risk.WRITE, listOf("from", "to"), buildJsonObject {
+            put("from", prop("string", "The path it has now, relative to the workspace."))
+            put("to", prop("string", "The path it should have."))
+        }),
+        ToolSpec(FETCH, "Open a public web page and return its text. Use it when the person gives a link or asks about something on a specific page. It reads; it cannot log in, click or send forms.", Risk.WRITE, listOf("url"), buildJsonObject {
+            put("url", prop("string", "The address of the page, starting with https://"))
+        }),
         ToolSpec("update_tasks", "Show the person a short checklist of the work, and keep it current. Send the whole list each time. Use it for work with several steps; skip it for simple requests.", Risk.READ, listOf("tasks"), buildJsonObject {
             putJsonObject("tasks") {
                 put("type", "array")
@@ -120,12 +135,14 @@ class Tools(
      * @param mediaOnly the tools an ordinary chat has too: the connected accounts (GitHub, Gmail) and making pictures
      *   and videos. Files, memory and the task list belong to Work.
      */
-    fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false, focus: ToolFocus? = null): JsonArray = buildJsonArray {
+    /** @param pages offer the app's own page reader: for services that have no web tools of their own */
+    fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false, focus: ToolFocus? = null, pages: Boolean = false): JsonArray = buildJsonArray {
         // A plain chat has no task list, memory or editing, but it can still look into the workspace and save a file there when asked to.
-        val own = if (mediaOnly) specs.filter { it.name in CHAT_FILE_TOOLS } else specs
+        val own = (if (mediaOnly) specs.filter { it.name in CHAT_FILE_TOOLS || it.name == FETCH } else specs)
+            .filter { (it.name != FETCH || (pages && !Net.offline)) && !switchedOff(it.name) }
         // In offline mode nothing that reaches the internet is offered: no accounts, no picture services, and only outside tools that are on this device or network.
-        val accounts = if (Net.offline) emptyList() else integrations?.specs().orEmpty() + media?.specs().orEmpty()
-        val lent = ToolPicker.pick(outside.flatMap { it.specs() }, focus, { origin(it)?.first })
+        val accounts = if (Net.offline) emptyList() else integrations?.specs().orEmpty() + media?.specs().orEmpty().filter { !switchedOff(it.name) }
+        val lent = ToolPicker.pick(outside.flatMap { it.specs() }, focus, { origin(it)?.first }, quiet = { mcp?.quiet(it) == true })
         for (s in own + (if (sandbox) listOf(SANDBOX_SPEC) else emptyList()) + accounts + lent) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
@@ -151,6 +168,9 @@ class Tools(
         "write_file" -> "Write " + input.str("path").orEmpty()
         "edit_file" -> "Edit " + input.str("path").orEmpty()
         "delete_file" -> "Delete " + input.str("path").orEmpty()
+        "search_files" -> "Find \"" + input.str("query").orEmpty().take(40) + "\" in files"
+        "move_file" -> "Move " + input.str("from").orEmpty() + " to " + input.str("to").orEmpty()
+        FETCH -> "Open " + input.str("url").orEmpty().removePrefix("https://").take(60)
         "update_tasks" -> "Update the task list"
         "get_time" -> "Check the time"
         "copy_to_clipboard" -> "Copy to clipboard"
@@ -175,6 +195,7 @@ class Tools(
             val missing = spec.required.filter { input[it] == null }
             if (missing.isNotEmpty()) throw ToolError("Missing required field: " + missing.joinToString())
         }
+        if (switchedOff(name)) throw ToolError("That tool is switched off in Settings, Tools.")
         val kept = callId.isNotEmpty() && touched(name, input)?.let { f -> undo?.remember(callId, f, describe(name, input)) } == true
         try {
             ToolOutcome(clip(execute(chatId, name, input)))
@@ -254,6 +275,8 @@ class Tools(
                 else -> ToolPreview(if (file?.isFile == true) "Changes the memory note ${file.name}." else "Creates a memory note.", can, if (can) yes else "Cannot be undone.")
             }
             "copy_to_clipboard" -> ToolPreview("Replaces what is on the clipboard.", false, "What was on the clipboard before is not kept.")
+            "move_file" -> ToolPreview("Moves ${input.str("from").orEmpty()} to ${input.str("to").orEmpty()}.", false, "Move it back to undo.")
+            FETCH -> ToolPreview("Opens this address. The site sees the address and that someone asked for it.\n${input.str("url").orEmpty()}", false, "Reads only; nothing on the page changes.")
             SANDBOX_PUT -> ToolPreview("Sends a copy of ${input.str("path").orEmpty()} to the AI service's sandbox.", false, "The copy there is removed by the service after 30 days.")
             else -> ToolPreview("", false, if (risk(name, input) == Risk.READ) "Reads only; nothing changes." else "")
         }
@@ -267,6 +290,9 @@ class Tools(
         "write_file" -> workspace.write(need(input, "path"), need(input, "content"))
         "edit_file" -> workspace.edit(need(input, "path"), need(input, "old_text"), need(input, "new_text"), input.bool("replace_all") == true)
         "delete_file" -> workspace.delete(need(input, "path"))
+        "search_files" -> workspace.search(need(input, "query"), input.str("path").orEmpty())
+        "move_file" -> workspace.rename(need(input, "from"), need(input, "to"))
+        FETCH -> WebPage.read(need(input, "url"))
         "update_tasks" -> {
             val tasks = input.arr("tasks") ?: throw ToolError("tasks must be a list.")
             host.tasksChanged(chatId, tasks.toString())
@@ -326,6 +352,21 @@ class Tools(
 
     companion object {
         const val MEMORY = "memory"
+        /** The app's own reader of web pages, for services that have none. */
+        const val FETCH = "fetch_page"
+
+        /** The app's own tools as the person sees them in Settings: a few groups, each with a switch. */
+        class Group(val id: String, val name: String, val about: String, val tools: Set<String>)
+        val GROUPS = listOf(
+            Group("read", "Read files", "List, read and search the files in your workspace.", setOf("list_files", "read_file", "search_files")),
+            Group("write", "Write and edit files", "Create, change, move and rename files. Asks first.", setOf("write_file", "edit_file", "move_file")),
+            Group("delete", "Delete files", "Remove files and folders. Always asks first.", setOf("delete_file")),
+            Group("pages", "Open web pages", "Read a page you link to, with services that have no web tools of their own. Asks first.", setOf(FETCH)),
+            Group("tasks", "Task list", "A checklist of the work in hand, kept up to date.", setOf("update_tasks")),
+            Group("time", "Date and time", "Know what day and time it is where you are.", setOf("get_time")),
+            Group("clipboard", "Clipboard", "Put text on the clipboard for you to paste.", setOf("copy_to_clipboard")),
+            Group("media", "Pictures and videos", "Make a picture or a short video when you ask, with your own key.", setOf(Media.IMAGE, Media.VIDEO)),
+        )
         /** Tools that run at the AI service, not on the device. */
         val SERVER_SIDE = setOf("web_search", "web_fetch", "code_execution", "bash_code_execution", "text_editor_code_execution")
         /** The workspace tools a plain chat has: enough to save what was asked for, and to find and read it again. */

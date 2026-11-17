@@ -51,6 +51,8 @@ data class McpServer(
     val wantsToken: Boolean = false,
 ) {
     val local: Boolean get() = command.isNotBlank()
+    /** One of the public servers the app comes with, which nobody on this device has contacted yet. */
+    val untouched: Boolean get() = McpPresets.isPreset(id) && checkedAt == 0L
 }
 
 /**
@@ -94,7 +96,9 @@ object McpSync {
         val have = mine.map { it.id }.toSet()
         for (e in incoming.values) if (e.id !in have && (gone[e.id] ?: -1) < e.at) {
             // A server that arrives is listed but off: nothing is contacted until the person connects it on this device.
-            out += McpServer(id = e.id, name = e.name.take(40), url = e.url.trim(), on = false, changedAt = e.at, wantsToken = e.token)
+            // One of the public servers the app comes with arrives as it is listed anywhere: with its known tools, and not contacted.
+            val preset = McpPresets.ALL.firstOrNull { it.id == e.id && it.url == e.url.trim() }
+            out += preset?.let { McpPresets.server(it).copy(changedAt = e.at) } ?: McpServer(id = e.id, name = e.name.take(40), url = e.url.trim(), on = false, changedAt = e.at, wantsToken = e.token)
             changed = true
         }
         val ahead = out.any { !it.local && (incoming[it.id]?.at ?: -1) < it.changedAt } || gone.any { (id, at) -> (theirs.gone[id] ?: -1) < at }
@@ -136,7 +140,7 @@ class Mcp(
     /** Plain http is only for development builds. */
     private val allowHttp: () -> Boolean = { false },
     private val appVersion: String = "1",
-    private val http: OkHttpClient = OkHttpClient.Builder().guarded().followSslRedirects(false).followRedirects(false)
+    private val http: OkHttpClient = appClient().followSslRedirects(false).followRedirects(false)
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(CALL_SECONDS, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS).build(),
 ) : OutsideTools {
     private val links = ConcurrentHashMap<String, McpLink>()
@@ -168,6 +172,9 @@ class Mcp(
     fun risk(name: String): Risk? = if (handles(name)) Risk.OUTWARD else null
 
     /** The server and tool behind one of the model's tool names, for the approval card and the timeline. */
+    /** True for a tool of a server the app came with: it is sent with a request only when there is a reason to. */
+    fun quiet(name: String): Boolean = named()[name]?.let { McpPresets.isPreset(it.server.id) } == true
+
     /** The model's name for one tool of one server, when both are switched on. */
     fun nameOf(serverId: String, tool: String): String? = named().entries.firstOrNull { it.value.server.id == serverId && it.value.tool.name == tool }?.key
 

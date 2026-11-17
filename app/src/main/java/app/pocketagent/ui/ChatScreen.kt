@@ -693,7 +693,8 @@ private fun Composer(
     val servers = if (at == null) emptyList() else allServers.filter { s ->
         ("mcp".startsWith(at.groupValues[2], ignoreCase = true) || s.name.startsWith(at.groupValues[2], ignoreCase = true)) && mentions.none { m -> m.mcp && m.name == s.name }
     }
-    fun connected(s: app.pocketagent.ai.McpServer) = s.on && mcpStatus[s.id] == app.pocketagent.ai.McpStatus.CONNECTED
+    // Usable now: it answered when last asked, or it is one the app came with, whose tools are known without asking.
+    fun connected(s: app.pocketagent.ai.McpServer) = s.on && (mcpStatus[s.id] == app.pocketagent.ai.McpStatus.CONNECTED || (s.untouched && s.tools.isNotEmpty() && mcpStatus[s.id] != app.pocketagent.ai.McpStatus.FAILED))
     // A connected server is pulled into the message; one that is not is connected first, and stays in the list.
     fun pick(s: app.pocketagent.ai.McpServer) {
         if (connected(s)) { onInput(input.substring(0, at!!.range.first + at.groupValues[1].length)); mentions += Mention(s.name, mcp = true) }
@@ -752,7 +753,7 @@ private fun Composer(
                         val failed = s.on && mcpStatus[s.id] == app.pocketagent.ai.McpStatus.FAILED
                         AssistChip(
                             onClick = { pick(s) }, enabled = !checking,
-                            label = { Text(s.name + if (on) " · Connected" else if (checking) " · Connecting" else if (failed) " · Not connected" else "", maxLines = 1) },
+                            label = { Text(s.name + if (on && s.untouched) " · Ready" else if (on) " · Connected" else if (checking) " · Connecting" else if (failed) " · Not connected" else "", maxLines = 1) },
                             leadingIcon = { Icon(Icons.Rounded.Extension, null, Modifier.size(18.dp)) },
                             trailingIcon = {
                                 if (on) Icon(Icons.Rounded.CheckCircle, null, Modifier.size(16.dp), tint = cs.primary)

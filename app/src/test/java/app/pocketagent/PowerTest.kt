@@ -252,4 +252,99 @@ class PowerTest {
         Net.offline = false
         assertTrue(tools.definitions(eager = false).map { (it as JsonObject).str("name") }.containsAll(listOf("github", "mcp_remote_far", "mcp_near_close")))
     }
+
+    // ---- the tools and servers the app comes with
+
+    @Test fun builtInServersAreListedOnceAndStayRemovedWhenRemoved() {
+        val defaults = app.pocketagent.ai.McpPresets.missing(emptyList(), emptyMap())
+        assertEquals(listOf("DeepWiki", "Context7"), defaults.map { it.name })
+        assertTrue(defaults.all { it.on && it.untouched && it.tools.isNotEmpty() && !it.hasToken && it.url.startsWith("https://") })
+        assertEquals("the others are only suggested", 4, app.pocketagent.ai.McpPresets.ALL.size)
+        // One the person removed is not brought back; one they already have under the same address is not doubled.
+        assertEquals(listOf("Context7"), app.pocketagent.ai.McpPresets.missing(emptyList(), mapOf("preset-deepwiki" to 5L)).map { it.name })
+        assertTrue(app.pocketagent.ai.McpPresets.missing(listOf(McpServer(id = "mine", name = "My DeepWiki", url = "https://mcp.deepwiki.com/mcp/"), defaults[1]), emptyMap()).isEmpty())
+        // It reaches a linked device as it is listed anywhere: with its tools, switched on, nothing contacted.
+        val arrived = McpSync.merge(emptyList(), emptyMap(), McpSync.pack(defaults, emptyMap()), now = 1000)!!.servers
+        assertTrue(arrived.size == 2 && arrived.all { it.on && it.untouched && it.tools.isNotEmpty() })
+    }
+
+    @Test fun aBuiltInServersToolsAreSentOnlyWhenThereIsAReason() {
+        val servers = app.pocketagent.ai.McpPresets.missing(emptyList(), emptyMap()) + McpServer(id = "own", name = "Weather", url = "https://w.example/mcp", tools = listOf(app.pocketagent.ai.McpTool("get_weather", "The weather in a city")))
+        val mcp = Mcp(servers = { servers }, token = { null })
+        val tools = Tools(Workspace(File(tmp, "ws")), Workspace(File(tmp, "mem")), host, mcp = mcp)
+        fun sent(text: String?, used: Set<String> = emptySet()) = tools.definitions(eager = false, focus = text?.let { ToolFocus(it, used) }).map { (it as JsonObject).str("name").orEmpty() }.filter { it.startsWith("mcp_") }
+        // An ordinary request carries the person's own server and none of the built-in ones: nobody pays for tools they did not ask for.
+        assertEquals(listOf("mcp_weather_get_weather"), sent("Write me a poem about tea"))
+        assertEquals(listOf("mcp_weather_get_weather"), sent(null))
+        // Naming the server, or asking for what it does, brings its tools along.
+        assertTrue(sent("@mcp DeepWiki\nhow does it start?").any { it.startsWith("mcp_deepwiki_") })
+        assertTrue(sent("@mcp DeepWiki\nhow does it start?").none { it.startsWith("mcp_context7_") })
+        assertTrue(sent("Look in the wiki of the facebook/react repository: what is its structure?").any { it.startsWith("mcp_deepwiki_") })
+        // A tool the chat already used stays, so the conversation remains valid.
+        assertTrue(sent("thanks", setOf("mcp_context7_query_docs")).contains("mcp_context7_query_docs"))
+        assertTrue(mcp.quiet("mcp_deepwiki_ask_wiki_question") && !mcp.quiet("mcp_weather_get_weather"))
+    }
+
+    @Test fun ownToolsCanBeSwitchedOffAndOnAndTheNewOnesWork() {
+        val ws = Workspace(File(tmp, "ws"))
+        ws.write("notes/tea.md", "# Tea\nAssam is malty\nDarjeeling is light")
+        ws.write("notes/coffee.md", "Arabica is mild")
+        var off = setOf<String>()
+        val tools = Tools(ws, Workspace(File(tmp, "mem")), host, off = { off })
+        fun names(pages: Boolean = false, chat: Boolean = false) = tools.definitions(eager = false, mediaOnly = chat, pages = pages).map { (it as JsonObject).str("name").orEmpty() }
+        assertTrue(names().containsAll(listOf("search_files", "move_file", "write_file", "delete_file", "update_tasks")))
+        assertFalse("the page reader is only for services that have no web tools of their own", names().contains(Tools.FETCH))
+        assertTrue(names(pages = true).contains(Tools.FETCH) && names(pages = true, chat = true).contains(Tools.FETCH))
+        // Searching finds lines, with where they are; moving renames.
+        val found = tools.run(1, "search_files", parseObject("""{"query":"assam"}""")!!)
+        assertTrue(found.text, !found.isError && found.text.contains("notes/tea.md:2: Assam is malty") && !found.text.contains("coffee"))
+        assertFalse(tools.run(1, "move_file", parseObject("""{"from":"notes/coffee.md","to":"drinks/coffee.md"}""")!!).isError)
+        assertTrue(File(ws.root, "drinks/coffee.md").isFile && !File(ws.root, "notes/coffee.md").exists())
+        // A group that is switched off is not offered, and a call to it is turned down.
+        off = setOf("delete", "pages", "tasks")
+        assertTrue(names(pages = true).none { it in setOf("delete_file", Tools.FETCH, "update_tasks") } && names().contains("write_file"))
+        val refused = tools.run(1, "delete_file", parseObject("""{"path":"notes/tea.md"}""")!!)
+        assertTrue(refused.isError && refused.text.contains("switched off") && File(ws.root, "notes/tea.md").isFile)
+        off = emptySet()
+        assertTrue(names().contains("delete_file"))
+        assertEquals("every tool with a switch belongs to exactly one group", Tools.GROUPS.sumOf { it.tools.size }, Tools.GROUPS.flatMap { it.tools }.toSet().size)
+    }
+
+    @Test fun thePageReaderGivesTheWordsOfAPageAndWillNotOpenPrivateAddresses() {
+        val html = "<html><head><title>Tea &amp; more</title><style>p{color:red}</style><script>alert('x')</script></head><body><h1>Brewing</h1><p>Use <b>fresh</b> water.</p><ul><li>Assam</li><li>Darjeeling &#8212; light</li></ul></body></html>"
+        val text = app.pocketagent.ai.WebPage.text(html, html = true)
+        assertTrue(text, text.startsWith("Tea & more") && text.contains("Brewing") && text.contains("Use fresh water.") && text.contains("Assam\nDarjeeling"))
+        assertFalse(text.contains("alert") || text.contains("color:red") || text.contains("<"))
+        assertEquals("{\"a\":1}", app.pocketagent.ai.WebPage.text("{\"a\":1}", html = false))
+        for (private in listOf("http://127.0.0.1:8080/admin", "http://192.168.1.1/", "https://localhost/x", "http://10.0.0.7/secret")) {
+            val e = runCatching { app.pocketagent.ai.WebPage.read(private) }.exceptionOrNull()
+            assertTrue(private, e is app.pocketagent.data.ToolError && e.message.orEmpty().contains("your own network"))
+        }
+        assertTrue(runCatching { app.pocketagent.ai.WebPage.read("not a link at all") }.exceptionOrNull() is app.pocketagent.data.ToolError)
+    }
+
+    @Test fun officeFilesAndArchivesCanBeReadWithoutAnotherApp() {
+        fun zip(name: String, vararg entries: Pair<String, String>): File = File(tmp, name).also { f ->
+            java.util.zip.ZipOutputStream(f.outputStream()).use { z -> entries.forEach { (n, body) -> z.putNextEntry(java.util.zip.ZipEntry(n)); z.write(body.toByteArray()); z.closeEntry() } }
+        }
+        val docx = zip("letter.docx", "word/document.xml" to "<w:document><w:body><w:p><w:r><w:t>Dear Sam,</w:t></w:r></w:p><w:p><w:r><w:t>Tea &amp; biscuits at four.</w:t></w:r></w:p></w:body></w:document>")
+        assertEquals("Dear Sam,\nTea & biscuits at four.", app.pocketagent.ui.FilePeek.office(docx))
+        val xlsx = zip("list.xlsx", "xl/sharedStrings.xml" to "<sst><si><t>Item</t></si><si><t>Tea</t></si></sst>",
+            "xl/worksheets/sheet1.xml" to "<worksheet><sheetData><row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c><c r=\"B1\"><v>12</v></c></row><row r=\"2\"><c r=\"A2\" t=\"s\"><v>1</v></c><c r=\"B2\"><v>3.5</v></c></row></sheetData></worksheet>")
+        assertEquals("Sheet 1\nItem\t12\nTea\t3.5", app.pocketagent.ui.FilePeek.office(xlsx))
+        val pptx = zip("deck.pptx", "ppt/slides/slide2.xml" to "<p:sld><a:p><a:r><a:t>Second</a:t></a:r></a:p></p:sld>", "ppt/slides/slide1.xml" to "<p:sld><a:p><a:r><a:t>First</a:t></a:r></a:p></p:sld>")
+        assertEquals("Slide 1\nFirst\n\nSlide 2\nSecond", app.pocketagent.ui.FilePeek.office(pptx))
+        assertTrue(app.pocketagent.ui.FilePeek.archive(docx).orEmpty().contains("word/document.xml"))
+        assertNull(app.pocketagent.ui.FilePeek.office(File(tmp, "missing.docx")))
+    }
+
+    @Test fun aLaterBuildOfTheSameVersionIsAnUpdateAndStillTheSameVersionToThePerson() {
+        val newer = app.pocketagent.update.Updates.Companion::isNewer
+        assertTrue("someone on the first 1.1.1 is offered its later build", newer("1.1.1-1", "1.1.1"))
+        assertFalse("the later build does not offer itself", newer("1.1.1-1", "1.1.1-1"))
+        assertTrue(newer("1.1.1-2", "1.1.1-1") && newer("1.1.2", "1.1.1-1") && newer("1.1.1-1", "1.1.0"))
+        assertFalse(newer("1.1.1", "1.1.1-1"))
+        assertEquals("1.1.1", app.pocketagent.update.Updates.shown("1.1.1-1"))
+        assertEquals(listOf("MyPAI-1.1.1-1.apk", "MyPAI-1.1.1-1-windows-x64-setup.exe"), app.pocketagent.update.Updates.fileNames("1.1.1-1").take(2))
+    }
 }

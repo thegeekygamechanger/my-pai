@@ -633,7 +633,7 @@ class RunManager(
             ApiException.Kind.BILLING, ApiException.Kind.AUTH, ApiException.Kind.NOT_FOUND, ApiException.Kind.PERMISSION,
         )
         /** The app's own tools that bring in text somebody else wrote. */
-        private val READS_OUTSIDE = setOf("read_file", "github", "gmail_search", "gmail_read")
+        private val READS_OUTSIDE = setOf("read_file", "search_files", Tools.FETCH, "github", "gmail_search", "gmail_read")
         /** How a note about a file the sandbox produced begins; the chat shows such a note as a file to open. */
         const val SAVED = "Saved to Files: "
     }

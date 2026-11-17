@@ -11,6 +11,9 @@ class ToolFocus(val text: String, val used: Set<String>)
  * words with what was asked.
  */
 object ToolPicker {
+    /** How well a request has to match a tool of a built-in server before that tool is sent: a word of its name, or several of its description. */
+    const val QUIET_NEEDS = 6
+
     /** The most tools from outside servers sent with one request. */
     const val MAX_OUTSIDE_TOOLS = 12
 
@@ -27,8 +30,8 @@ object ToolPicker {
      * @param server the name of the server a tool comes from
      * @return at most [cap] of [all], in their original order (so the request stays the same from one message to the next where it can)
      */
-    fun pick(all: List<ToolSpec>, focus: ToolFocus?, server: (String) -> String?, cap: Int = MAX_OUTSIDE_TOOLS): List<ToolSpec> {
-        if (all.size <= cap) return all
+    fun pick(all: List<ToolSpec>, focus: ToolFocus?, server: (String) -> String?, cap: Int = MAX_OUTSIDE_TOOLS, quiet: (String) -> Boolean = { false }): List<ToolSpec> {
+        if (all.size <= cap && all.none { quiet(it.name) }) return all
         val text = focus?.text.orEmpty()
         val chosen = MENTION.findAll(text).flatMap { it.groupValues[1].split(',') }.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
         val asked = words(MENTION.replace(text, " "))
@@ -43,7 +46,9 @@ object ToolPicker {
             }
             Triple(i, t, score)
         }
-        val keep = scored.sortedWith(compareByDescending<Triple<Int, ToolSpec, Int>> { it.third }.thenBy { it.first }).take(cap).map { it.first }.toSet()
+        // A tool of a server the app came with needs a reason to be sent: the person named its server, the chat already used it, or the request matches it.
+        val wanted = scored.filter { !quiet(it.second.name) || it.third >= QUIET_NEEDS }
+        val keep = wanted.sortedWith(compareByDescending<Triple<Int, ToolSpec, Int>> { it.third }.thenBy { it.first }).take(cap).map { it.first }.toSet()
         return scored.filter { it.first in keep }.map { it.second }
     }
 }
