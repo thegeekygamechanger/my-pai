@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DataUsage
@@ -353,7 +354,10 @@ fun SettingsScreen(onBack: () -> Unit, onDoc: (String) -> Unit = {}) {
                     Card("Reliability", Icons.Rounded.Shield) {
                         SwitchRow("Summarise long chats", "Very long chats condense older messages to keep going (Claude models).", s.compaction) { v -> set { it.copy(compaction = v) } }
                         SwitchRow("Fall back when declined", "If the chosen Claude model declines a request, let another Claude model answer it.", s.fallbacks) { v -> set { it.copy(fallbacks = v) } }
+                        BackupModelRow()
+                        SwitchRow("Offline mode", "Only Ollama and tools on this device or your own network. Nothing goes to the internet.", s.offline) { v -> set { it.copy(offline = v) } }
                     }
+                    Card("Activity", Icons.Rounded.History, "Every tool call") { ActivitySection() }
                 }
                 Group("Connected") {
                     Card("Connections", Icons.Rounded.Link, listOfNotNull("GitHub".takeIf { g.integrations.githubOn() }, "Gmail".takeIf { g.integrations.gmailOn() }).joinToString(" · ")) { ConnectionsSection() }

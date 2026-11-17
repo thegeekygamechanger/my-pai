@@ -590,7 +590,10 @@ fun ChatScreen(chatId: Long, initialText: String, onMenu: (() -> Unit)?, onNew: 
             },
         )
     }
-    incoming?.let { shared ->
+    incoming?.takeIf { it.setup != null }?.let { shared ->
+        SetupOfferDialog(shared) { said -> incoming = null; if (said != null) scope.launch { snack.showSnackbar(said) } }
+    }
+    incoming?.takeIf { it.setup == null }?.let { shared ->
         AlertDialog(
             onDismissRequest = { incoming = null },
             title = { Text(if (shared.by.isEmpty()) "Open this shared chat?" else "Open the chat ${shared.by} shared?") },

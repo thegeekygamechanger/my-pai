@@ -4,6 +4,21 @@ package app.pocketagent.ui
 
 /** What changed in each version, newest first. */
 internal val CHANGELOG_TEXT = """
+## Version 1.1.1
+- **Say yes for one task.** The approval card now has "For this task": the tool is allowed until that piece of work ends, then it asks again. There is no "always" any more, and an email or a change on GitHub still asks every time.
+- **See what will change, and undo it.** Before a file is written, edited or deleted, the card says exactly what would change. Afterwards the step in the chat has an Undo button that puts the file back. When something cannot be undone (a call to a server, an email), the card says so.
+- **A shield against planted instructions.** If a web tool, a file, an email or an MCP server brings back text written to give the assistant orders, it is marked in the chat, passed on as information only, and for the rest of that task every action asks you first. It catches common wording, not everything.
+- **Activity log.** Settings, Activity lists every tool call: when, which server and tool, what was sent and how it ended, with a count of calls and tokens for each tool. It stays on the device.
+- **A meter in every chat.** The chat's settings sheet shows what the chat has used and which tools account for it.
+- **Only the tools that fit.** When servers offer many tools, only the few that match your request are sent with it, which saves tokens. Servers you name with @mcp come first.
+- **Backup model.** In Settings, Reliability choose a model to carry on with when your usual service fails, is busy or runs out. The chat tells you when it happens.
+- **Offline mode.** One switch: only Ollama and tools on your device or your own network. Nothing goes to the internet.
+- **Routines.** A scheduled task can have further steps, each sent when the one before is done, and can be kept for running by hand. Every step still asks before it changes anything.
+- **Your MCP servers on all your devices.** With sync on, the name and address of each server reach your linked devices. Tokens never travel: you type them in again on each device.
+- **Use your computer's tools from your phone.** On a computer, switch on "Lend tools to my linked devices" and mark the servers to lend. Your phone can then call them through the same encrypted pairing as sync. Off unless you turn it on.
+- **Share a setup.** Hand your servers, routines and instructions to someone with a four-character code. Tokens and keys are never included, and servers arrive switched off.
+- **My PAI as an MCP server.** On a computer, other programs on that computer can read your files, memory notes and tasks, if you turn it on. Read-only, that computer only, with a token, and every request asks you.
+
 ## Version 1.1.0
 - **MCP servers.** In Settings, Connections you can now add MCP servers: tools from other services, added by their address, with a token only if the server needs one. On a computer a server can also be a program on that computer. You choose which servers, and which of their tools, are switched on. The assistant asks before every call and shows the server, the tool and exactly what it will send. An MCP server is a third party and receives what is sent to it, so add only ones you trust. Tokens stay encrypted on the device they were typed on. It works with every AI service, Ollama included, and still needs no account.
 - **@mcp in any chat.** Type @mcp, the same way as @github or @gmail, and your servers are listed above the message box. One that is answering says Connected; one that is not has a button to connect or reconnect it. Settings shows the same mark beside each server.

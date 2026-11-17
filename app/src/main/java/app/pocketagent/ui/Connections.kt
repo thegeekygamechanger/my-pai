@@ -129,4 +129,7 @@ fun ConnectionsSection() {
     }
 
     McpSection()
+    BridgeSection()
+    ServeSection()
+    ShareSetupSection()
 }

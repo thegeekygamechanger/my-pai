@@ -95,10 +95,12 @@ private fun ScheduleDialog(initial: Schedule, fresh: Boolean, onDismiss: () -> U
     var agent by remember { mutableStateOf(initial.agent) }
     var repeat by remember { mutableStateOf(initial.repeat) }
     var weekday by remember { mutableStateOf(initial.weekday.toString()) }
+    // Further steps make the task a routine: each is sent when the one before it has finished.
+    var steps by remember { mutableStateOf(initial.steps) }
     val time = rememberTimePickerState(initial.hour, initial.minute, is24Hour = true)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (fresh) "New scheduled task" else "Edit task") },
+        title = { Text(if (fresh) "New task or routine" else "Edit task") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(title, { title = it.take(60) }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true, shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
@@ -106,9 +108,17 @@ private fun ScheduleDialog(initial: Schedule, fresh: Boolean, onDismiss: () -> U
                     prompt, { prompt = it.take(4000) }, Modifier.fillMaxWidth(), label = { Text("What should it do?") }, minLines = 3, maxLines = 6, shape = MaterialTheme.shapes.large,
                     placeholder = { Text("For example: summarise today's top technology news in five points.") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 )
+                steps.forEachIndexed { i, step ->
+                    OutlinedTextField(
+                        step, { v -> steps = steps.toMutableList().also { it[i] = v.take(4000) } }, Modifier.fillMaxWidth(), label = { Text("Then, step ${i + 2}") }, minLines = 2, maxLines = 5, shape = MaterialTheme.shapes.large,
+                        trailingIcon = { IconButton({ steps = steps.filterIndexed { j, _ -> j != i } }) { Icon(Icons.Rounded.DeleteOutline, "Remove step ${i + 2}") } },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    )
+                }
+                if (steps.size < 11) TextButton({ steps = steps + "" }) { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Text(if (steps.isEmpty()) "Add a step to run after it" else "Add another step", Modifier.padding(start = 6.dp)) }
                 Segmented(listOf(false to "Chat", true to "Work"), agent, { agent = it }, Modifier.fillMaxWidth(), icons = mapOf(false to Icons.Rounded.ChatBubbleOutline, true to Icons.Rounded.AutoAwesome))
-                TimeInput(time)
-                Choices(listOf("once" to "Once", "daily" to "Every day", "weekdays" to "Weekdays", "weekly" to "Weekly"), repeat, { repeat = it })
+                if (repeat != "never") TimeInput(time)
+                Choices(listOf("once" to "Once", "daily" to "Every day", "weekdays" to "Weekdays", "weekly" to "Weekly", "never" to "When I run it"), repeat, { repeat = it })
                 if (repeat == "weekly") Choices(DAYS, weekday, { weekday = it })
             }
         },
@@ -118,6 +128,7 @@ private fun ScheduleDialog(initial: Schedule, fresh: Boolean, onDismiss: () -> U
                     id = if (fresh) UUID.randomUUID().toString() else initial.id,
                     title = title.trim().ifEmpty { prompt.trim().take(40) }, prompt = prompt.trim(), agent = agent, hour = time.hour, minute = time.minute,
                     repeat = repeat, weekday = weekday.toInt(), enabled = true, lastRun = 0, createdAt = System.currentTimeMillis(),
+                    steps = steps.map { it.trim() }.filter { it.isNotEmpty() },
                 ))
             }, enabled = prompt.isNotBlank()) { Text("Save") }
         },
@@ -172,7 +183,7 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit) {
                                 Icon(if (s.agent) Icons.Rounded.AutoAwesome else Icons.Rounded.ChatBubbleOutline, null, Modifier.size(22.dp), tint = cs.primary)
                                 Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                                     Text(s.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(Scheduler.describe(s) + if (s.repeat == "once" && s.lastRun > 0) " · done" else "", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                                    Text(Scheduler.describe(s) + (if (s.repeat == "once" && s.lastRun > 0) " · done" else "") + (if (s.steps.isNotEmpty()) " · ${s.steps.size + 1} steps" else ""), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                                 }
                                 IconButton({ scope.launch { g.scheduler.runNow(s.id)?.let(onOpenChat) } }) { Icon(Icons.Rounded.PlayArrow, "Run ${s.title} now") }
                                 IconButton({ save { l -> l.filter { it.id != s.id } } }) { Icon(Icons.Rounded.DeleteOutline, "Delete ${s.title}", tint = cs.onSurfaceVariant) }

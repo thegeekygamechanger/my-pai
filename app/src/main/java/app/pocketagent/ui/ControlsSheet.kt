@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pocketagent.LocalGraph
 import app.pocketagent.ai.ModelCaps
+import app.pocketagent.ai.formatCost
+import app.pocketagent.ai.formatTokens
 import app.pocketagent.ai.Providers
 import app.pocketagent.data.Chat
 import kotlinx.coroutines.launch
@@ -188,6 +190,19 @@ fun ControlsSheet(chat: Chat, onDismiss: () -> Unit) {
             SwitchRow("Memory", "Work mode: keep notes that carry over between chats.", chat.memory, enabled = chat.agent) { save(chat.copy(memory = it)) }
             if (server && ModelCaps.fast(chat.model)) SwitchRow("Fast mode", "Much faster output at about twice the price.", chat.fast) { save(chat.copy(fast = it)) }
             SwitchRow("Show the working", "Show the reasoning, searches and other steps behind each reply.", settings?.showWork == true) { v -> scope.launch { g.settingsStore.update { it.copy(showWork = v) } } }
+
+            // The meter: what this chat has used, and which tools account for how much of it.
+            val byTool = remember(chat.id, chat.outTok) { g.activity.byTool(chat.id).take(6) }
+            if (chat.inTok + chat.outTok > 0 || byTool.isNotEmpty()) {
+                SectionLabel("This chat has used", Modifier.padding(top = 18.dp))
+                Text(
+                    "${formatTokens(chat.inTok + chat.cacheReadTok)} in · ${formatTokens(chat.outTok)} out" + formatCost(chat.costMicros).let { if (it.isEmpty()) "" else " · about $it" },
+                    Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodyLarge,
+                )
+                byTool.forEach { t ->
+                    Text("${t.name}: ${t.calls} call${if (t.calls == 1) "" else "s"}, about ${formatTokens(t.tokens)} tokens", Modifier.padding(start = 4.dp, top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
 
             if (chat.agent) {
                 SectionLabel("Work permissions", Modifier.padding(top = 18.dp))

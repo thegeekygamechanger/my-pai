@@ -61,7 +61,10 @@ Replies come from the service you chose (Anthropic, OpenAI, OpenRouter, Groq, Go
 In Work mode the model can read and write files in the app's workspace folder, keep memory notes, search the web and run code on the service's side. It asks before changing things unless you choose "Full auto". You are responsible for what you ask it to do and for checking its work.
 
 ## MCP servers
-You can add tools from MCP servers. Those servers are run by other people, not by My PAI: their own terms apply to what you send them, and you add them at your own risk. The app asks you before every call to one.
+You can add tools from MCP servers. Those servers are run by other people, not by My PAI: their own terms apply to what you send them, and you add them at your own risk. The app asks you before every call to one, or once for the task in hand if you choose "For this task".
+
+## Backup model and warnings
+If you choose a backup model, a reply that your usual service could not give is asked of the backup instead, at that service's price, and the chat says so. The app warns you when something a tool brought back reads like instructions to the assistant; that check catches common wording, not everything, so read what you approve.
 
 ## Answers can be wrong
 AI models make mistakes and can state false things with confidence. Do not rely on a reply for medical, legal, financial or safety decisions without checking it with a qualified person or a trusted source.
@@ -96,7 +99,19 @@ Your chats, attachments, workspace files, memory notes and settings are stored o
 If you connect GitHub or Gmail, the token or app password is stored encrypted on your device like your other keys. In Work mode the assistant can then read from that account, and what it reads is sent to the AI service as part of the conversation. It asks you every time before it sends an email or changes anything on GitHub. Disconnect at any time in Settings, Connections, and revoke the token or app password in your GitHub or Google account.
 
 ## MCP servers
-An MCP server is a service run by someone else (or a program on your own computer) that gives the assistant extra tools. The app contacts only the servers you add yourself, and only to read their list of tools and to make a call you approved. Before every call you are shown the server, the tool and exactly what will be sent, and nothing is sent until you say yes. What is sent goes to that server and is handled under its own policy, not this one; what it answers is sent on to the AI service as part of the conversation. A token you paste for a server is stored encrypted on the device like your keys, is sent only to that server, and is never synced to your other devices or put in a backup. Remove a server at any time in Settings, Connections.
+An MCP server is a service run by someone else (or a program on your own computer) that gives the assistant extra tools. The app contacts only the servers you add yourself, and only to read their list of tools and to make a call you approved. Before every call you are shown the server, the tool and exactly what will be sent, and nothing is sent until you say yes. What is sent goes to that server and is handled under its own policy, not this one; what it answers is sent on to the AI service as part of the conversation. A token you paste for a server is stored encrypted on the device like your keys, is sent only to that server, and is never synced to your other devices or put in a backup. With sync on, the name and address of each server reach your linked devices, where it arrives switched off; its token has to be typed in again there. When many tools are available, only the few that fit your request are sent to the AI service with it. Remove a server at any time in Settings, Connections.
+
+## Tools on your own computer
+On a computer you can lend the tools of servers you mark to your linked devices, so your phone can use them. It is off until you turn it on. Calls travel through the same encrypted pairing as sync, which the relay cannot read, and each is shown to you on the device that makes it. Also on a computer, you can let other programs on that same computer read your workspace files, memory notes and scheduled tasks. That too is off until you turn it on: it is read-only, reachable only from that computer, needs a token shown in Settings, and every request is shown to you to allow or deny.
+
+## The activity log
+The app keeps a list of the tool calls it made: the time, the tool, what was sent (cut short, with anything that looks like a password or token left out) and the first words of the result. It is on this device only, is in no backup and is never synced. Clear it in Settings, Activity.
+
+## Offline mode
+With Offline mode on, the app refuses every connection that would leave your device or your own network: AI services on the internet, MCP servers elsewhere, sync, weather, update checks and voice typing by a service. Only Ollama and tools on your device or network are used.
+
+## Sharing a setup
+You can hand someone your MCP servers (names and addresses), your tasks and routines, and your standing instructions with a code, the same way a chat is shared. Tokens and keys are never part of it.
 
 ## Scheduled tasks
 A scheduled task starts a chat by itself at the time you set, on the device where you created it. It uses your keys and your connections exactly as a chat you start yourself.

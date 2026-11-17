@@ -128,6 +128,8 @@ fun AppRoot(host: Host) {
         PocketTheme((s ?: first).theme, (s ?: first).dynamicColor, (s ?: first).pureBlack) {
             Box(Modifier.fillMaxSize()) {
                 if (s != null) AppBody(host, s)
+                // A question from another program on this computer is asked over whatever screen is open.
+                if (s != null && s.serve) ServeAskDialog()
                 Opening(loaded = s != null)
             }
         }

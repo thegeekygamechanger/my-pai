@@ -324,6 +324,11 @@ fun toolIcon(name: String): ImageVector = when (name) {
 @Composable
 fun ToolRow(row: UiRow.Tool, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
+    val g = LocalGraph.current
+    // A change to a file can be taken back from the step that made it, while the copy of the old file is kept.
+    var undone by remember(row.id) { mutableStateOf(false) }
+    val canUndo = remember(row.id, row.state, undone) { !undone && !row.server && row.state == ToolState.DONE && g.tools.canUndo(row.id) }
+    val flagged = row.result.startsWith(app.pocketagent.ai.Shield.MARK)
     if (row.media.isNotEmpty()) { Column(modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) { row.media.forEach { MediaView(it) } }; return }
     val uri = LocalUriHandler.current
     var open by rememberSaveable(row.key) { mutableStateOf(false) }
@@ -345,6 +350,8 @@ fun ToolRow(row: UiRow.Tool, modifier: Modifier) {
                     row.title, Modifier.weight(1f).padding(horizontal = 12.dp),
                     style = MaterialTheme.typography.bodyMedium, color = cs.onSurface, maxLines = if (open) 4 else 1, overflow = TextOverflow.Ellipsis,
                 )
+                if (canUndo) TextButton({ if (g.undoTool(row.id) != null) undone = true }, Modifier.height(32.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)) { Text("Undo") }
+                if (undone) Text("Undone", Modifier.padding(end = 10.dp), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
                 AnimatedContent(row.state, transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f, stiffness = 500f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) }, label = "state") { st ->
                     when (st) {
                         ToolState.RUNNING -> LoadingIndicator(Modifier.size(24.dp), color = cs.primary)
@@ -354,6 +361,7 @@ fun ToolRow(row: UiRow.Tool, modifier: Modifier) {
                     }
                 }
             }
+            if (flagged) Text("This result held text written to look like instructions. It was passed on as information only.", Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp), style = MaterialTheme.typography.bodySmall, color = cs.error)
             if (open) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (row.input.isNotBlank()) Mono(row.input.take(1500))
                 if (row.result.isNotBlank()) Mono(row.result)
@@ -566,7 +574,10 @@ fun ApprovalCard(p: PendingApproval, modifier: Modifier = Modifier, onAllow: () 
     val outward = p.risk == Risk.OUTWARD
     val integrations = LocalGraph.current.integrations
     // A tool of an MCP server: the person sees which server, which tool, and exactly what it would be sent.
-    val mcp = LocalGraph.current.mcp.origin(p.name)
+    val g = LocalGraph.current
+    val mcp = g.tools.origin(p.name)
+    // The dry run: what this call would change, worked out without doing it, and whether it can be taken back.
+    val dry = remember(p) { runCatching { g.tools.preview(p.name, p.input) }.getOrNull() }
     val preview = remember(p) {
         if (mcp != null) ("Server: ${mcp.first}\nTool: ${mcp.second}\nSends:\n" + app.pocketagent.ai.PrettyJson.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), p.input)).take(3000)
         else if (integrations.handles(p.name)) integrations.preview(p.name, p.input).take(3000) else when (p.name) {
@@ -582,20 +593,23 @@ fun ApprovalCard(p: PendingApproval, modifier: Modifier = Modifier, onAllow: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(toolIcon(p.name), null, Modifier.size(22.dp))
                 Column(Modifier.padding(start = 12.dp)) {
-                    Text(if (destructive) "Allow this? It cannot be undone" else if (mcp != null) "Allow this? It goes to ${mcp.first}, a third party" else if (outward) "Allow this? It goes out from your account" else "Allow this?", style = MaterialTheme.typography.labelLarge)
+                    Text(if (destructive && dry?.undo != true) "Allow this? It cannot be undone" else if (destructive) "Allow this?" else if (g.bridge.handles(p.name)) "Allow this? It runs on your computer" else if (mcp != null) "Allow this? It goes to ${mcp.first}, a third party" else if (outward) "Allow this? It goes out from your account" else "Allow this?", style = MaterialTheme.typography.labelLarge)
                     Text(p.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
+            if (dry != null && dry.text.isNotBlank()) Text(dry.text, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodyMedium)
             if (preview.isNotBlank()) Surface(Modifier.fillMaxWidth().padding(top = 12.dp), shape = MaterialTheme.shapes.small, color = cs.surface.copy(alpha = 0.55f), contentColor = cs.onSurface) {
                 Text(
                     preview, Modifier.heightIn(max = 130.dp).verticalScroll(rememberScrollState()).padding(10.dp),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, lineHeight = 17.sp),
                 )
             }
+            if (dry != null && dry.undoNote.isNotBlank()) Text(dry.undoNote, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = androidx.compose.material3.LocalContentColor.current.copy(alpha = 0.75f))
             Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onDeny) { Text("Deny") }
                 Spacer(Modifier.weight(1f))
-                if (!destructive && !outward) OutlinedButton(onAlways) { Text("Always", maxLines = 1) }
+                // Allowed until this task ends, and not a moment longer. An email or a change on GitHub is asked about every time.
+                if (!destructive && (!outward || mcp != null)) OutlinedButton(onAlways) { Text("For this task", maxLines = 1) }
                 FilledTonalButton(onAllow) { Text("Allow", maxLines = 1) }
             }
         }

@@ -244,7 +244,7 @@ fun OpenSharedDialog(onDismiss: () -> Unit, onOpened: (Long) -> Unit) {
                 scope.launch {
                     val id = runCatching { ShareClient.open(g, parsed) }.getOrNull()
                     busy = false
-                    if (id == null) error = "Could not reach the sharing device. Ask them to keep the share screen open, then try again." else onOpened(id)
+                    if (id == null) error = "Could not reach the sharing device. Ask them to keep the share screen open, then try again." else if (id == ShareClient.SETUP) onDismiss() else onOpened(id)
                 }
             }, enabled = code.isNotBlank() && !busy) { if (busy) LoadingIndicator(Modifier.size(24.dp)) else Text("Open") }
         },

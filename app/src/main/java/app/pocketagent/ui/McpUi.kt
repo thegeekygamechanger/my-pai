@@ -59,7 +59,8 @@ fun McpSection() {
     val g = LocalGraph.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    val servers = g.settings.collectAsState().value?.mcpServers.orEmpty()
+    val settingsNow = g.settings.collectAsState().value
+    val servers = settingsNow?.mcpServers.orEmpty()
     var editing by remember { mutableStateOf<McpServer?>(null) }
     var open by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -108,6 +109,7 @@ fun McpSection() {
                     Switch(s.on, { v -> if (v) reconnect(s) else scope.launch { g.changeMcpServer(s.id) { it.copy(on = false) } } })
                 }
                 if (s.on && status[s.id] == McpStatus.FAILED && notes[s.id] == null) Text("Not connected. The server did not answer.", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.error)
+                if (s.wantsToken && !s.hasToken) Text("From a linked device. It needs its token typed in here: choose Edit.", Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = cs.tertiary)
                 notes[s.id]?.let { (text, bad) -> Text(text, Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodySmall, color = if (bad) cs.error else cs.primary) }
                 AnimatedVisibility(shown) {
                     Column {
@@ -120,7 +122,15 @@ fun McpSection() {
                                 Switch(t.on, { v -> scope.launch { g.changeMcpServer(s.id) { srv -> srv.copy(tools = srv.tools.map { if (it.name == t.name) it.copy(on = v) else it }) } } }, enabled = s.on)
                             }
                         }
-                        if (s.tools.isEmpty()) Text("This server offers no tools.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                        // On a computer with the bridge on: whether linked devices may use this server through the pairing.
+                        if (g.platform.isDesktop && settingsNow?.bridge == true) Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Lend to my devices", style = MaterialTheme.typography.bodyMedium)
+                                Text("Your linked devices can call its tools.", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                            }
+                            Switch(s.lend, { v -> scope.launch { g.changeMcpServer(s.id) { it.copy(lend = v) } } }, enabled = s.on)
+                        }
+                        if (s.tools.isEmpty()) Text(if (s.checkedAt == 0L) "Connect it to see its tools." else "This server offers no tools.", Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
                         Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             // Asks the server again: this both tests the connection and brings its list of tools up to date.
                             TextButton({
