@@ -1,0 +1,6 @@
+New: "For this task" approvals, a preview of what will change, and Undo for file changes.
+New: a shield that flags planted instructions in what tools bring back.
+New: Activity log and a usage meter per chat and per tool.
+New: backup model, Offline mode, and routines with several steps.
+New: your MCP servers on all your devices (tokens never travel), and share a setup with a code.
+New: use your computer's tools from your phone.

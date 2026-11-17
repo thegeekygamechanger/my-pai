@@ -11,6 +11,10 @@ Give it a task and it goes step by step with files in a private workspace, the w
 
 <b>Everything else</b>
 • MCP servers: add tools from other services, type @mcp in a chat, and approve every call before it is made
+• See what a step will change before it runs, allow it once or for the task, and undo a file change afterwards
+• Text that tries to give the assistant orders is flagged; an activity log lists every tool call
+• Routines with several steps, a backup model, and an offline mode for local models only
+• Use your computer's tools from your phone through your own encrypted pairing
 • Save a file from any chat, read it while it is being written, and download or share it from Files
 • Incognito chat that is never saved or synced
 • Scheduled tasks that run by themselves and notify you

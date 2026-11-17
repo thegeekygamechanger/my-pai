@@ -43,6 +43,7 @@ The Android app and the desktop app are the same source files (`app/src/main/jav
 | `desktop/` | What only computers need |
 | `server/relay.mjs` | The relay (plain Node, no dependencies) |
 | `scripts/site.py` | Builds the website in `docs/` and the in-app What's new page |
+| `design/` | Design and security reviews of the larger features. A change to one of those features updates its review |
 
 ## Sending a pull request
 
