@@ -151,6 +151,7 @@ class AndroidPlatform(private val app: Application) : Platform {
 
     override val isDesktop = false
     override val versionName: String = BuildConfig.VERSION_NAME
+    override val revision: Int = BuildConfig.REVISION
     override val debug: Boolean = BuildConfig.DEBUG
     override val filesDir: File = app.filesDir
     override val deviceName: String = listOf(Build.MANUFACTURER.replaceFirstChar { it.uppercase() }, Build.MODEL).filter { it.isNotBlank() }.distinct().joinToString(" ").ifBlank { "Android phone" }
@@ -241,9 +242,40 @@ class AndroidPlatform(private val app: Application) : Platform {
         )
     }
 
+    override fun picture(file: File, maxPx: Int): ImageBitmap? = decode(file, maxPx)
+
+    override fun pdfPages(file: File): Int = runCatching {
+        android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> android.graphics.pdf.PdfRenderer(fd).use { it.pageCount } }
+    }.getOrDefault(0)
+
+    /** Drawn by the phone's own PDF renderer, on white, as wide as asked and never so tall that it would not fit in memory. */
+    override fun pdfPage(file: File, index: Int, widthPx: Int): ImageBitmap? = runCatching {
+        android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            android.graphics.pdf.PdfRenderer(fd).use { pdf ->
+                pdf.openPage(index).use { page ->
+                    val w = widthPx.coerceIn(200, 2000)
+                    val h = (w.toLong() * page.height / page.width.coerceAtLeast(1)).toInt().coerceIn(1, 4000)
+                    val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                    bmp.eraseColor(android.graphics.Color.WHITE)
+                    page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    bmp.asImageBitmap()
+                }
+            }
+        }
+    }.getOrNull()
+
+    /** True when another app took the file; false when the phone has none for that kind of file. */
+    override fun openOutside(file: File): Boolean = runCatching {
+        val uri = FileProvider.getUriForFile(app, app.packageName + ".files", file)
+        val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        app.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
+
     /** A small preview, decoded at reduced size so a list of images stays light on memory. */
-    override fun thumbnail(path: String, maxPx: Int): ImageBitmap? = runCatching {
-        val f = attachments.file(path)
+    override fun thumbnail(path: String, maxPx: Int): ImageBitmap? = decode(attachments.file(path), maxPx)
+
+    private fun decode(f: File, maxPx: Int): ImageBitmap? = runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.path, bounds)
         var sample = 1

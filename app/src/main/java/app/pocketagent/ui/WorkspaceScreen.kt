@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -101,23 +102,14 @@ fun WorkspaceScreen(onBack: () -> Unit) {
                 IconButton({ runCatching { clipboard.setText(AnnotatedString(f.readText().take(500_000))) } }) { Icon(Icons.Rounded.ContentCopy, "Copy contents") }
                 if (tab == "files") IconButton({ note = g.platform.saveCopy(f) ?: "Could not save a copy here. Use Share instead." }) { Icon(Icons.Rounded.Download, "Download a copy") }
                 if (tab == "files") IconButton({ g.platform.shareFile(f) }) { Icon(Icons.Rounded.Share, if (g.platform.isDesktop) "Show in folder" else "Share file") }
+                IconButton({ if (!g.platform.openOutside(f)) note = "No app on this device opens this kind of file." }) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "Open with another app") }
                 IconButton({ deleting = f }) { Icon(Icons.Rounded.DeleteOutline, "Delete file") }
             }
         }
         val file = viewing
         if (file != null) {
-            val text = remember(file, version) {
-                runCatching {
-                    val bytes = file.readBytes()
-                    if (bytes.take(4096).any { it == 0.toByte() }) "(Not a text file. Use Share to open it in another app.)" else String(bytes, 0, minOf(bytes.size, 400_000), Charsets.UTF_8)
-                }.getOrDefault("(Could not read this file.)")
-            }
-            SelectionContainer(Modifier.fillMaxSize()) {
-                Text(
-                    text, Modifier.verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()).navigationBarsPadding().padding(18.dp),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, lineHeight = 20.sp), softWrap = false,
-                )
-            }
+            // Shown by the app itself, whatever it is: Markdown as a page, a picture as a picture, a PDF page by page.
+            FileBody(file, version = version)
         } else {
             Segmented(listOf("files" to "Files", "memory" to "Memory"), tab, { tab = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
             if (rel.isNotEmpty()) Text("/$rel", Modifier.padding(horizontal = 22.dp, vertical = 4.dp), style = MaterialTheme.typography.labelLarge, color = cs.primary)

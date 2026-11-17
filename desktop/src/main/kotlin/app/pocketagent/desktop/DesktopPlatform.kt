@@ -64,6 +64,8 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     override val isDesktop = true
     // The property lets a test pretend to be an older version, to see the update notice appear.
     override val versionName: String = System.getProperty("pocketagent.testVersion") ?: BuildInfo.VERSION
+    // A test that pretends to be an older version pretends to be its first build.
+    override val revision: Int = if (System.getProperty("pocketagent.testVersion") != null) 0 else BuildInfo.REVISION
     override val debug: Boolean = System.getProperty("pocketagent.debug") == "1"
     override val deviceName: String = runCatching { InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotBlank() && it != "localhost" } ?: if (windows) "Windows PC" else "Linux PC"
     override val system = if (windows) "windows" else "linux"
@@ -148,9 +150,26 @@ class DesktopPlatform(override val filesDir: File) : Platform {
         )
     }
 
-    override fun thumbnail(path: String, maxPx: Int): ImageBitmap? = runCatching {
-        org.jetbrains.skia.Image.makeFromEncoded(attachments.file(path).readBytes()).toComposeImageBitmap()
+    override fun thumbnail(path: String, maxPx: Int): ImageBitmap? = decode(attachments.file(path), maxPx)
+    override fun picture(file: File, maxPx: Int): ImageBitmap? = decode(file, maxPx)
+
+    /** A picture no larger than it will be shown: a photo kept at full size for a thumbnail costs tens of megabytes each. */
+    private fun decode(file: File, maxPx: Int): ImageBitmap? = runCatching {
+        val full = org.jetbrains.skia.Image.makeFromEncoded(file.readBytes())
+        val longer = maxOf(full.width, full.height)
+        if (longer <= maxPx) return@runCatching full.toComposeImageBitmap()
+        val w = (full.width.toLong() * maxPx / longer).toInt().coerceAtLeast(1)
+        val h = (full.height.toLong() * maxPx / longer).toInt().coerceAtLeast(1)
+        val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(w, h)
+        surface.canvas.drawImageRect(full, org.jetbrains.skia.Rect.makeWH(w.toFloat(), h.toFloat()))
+        val small = surface.makeImageSnapshot().toComposeImageBitmap()
+        full.close(); surface.close()
+        small
     }.getOrNull()
+
+    /** True when the system had a program for the file. */
+    override fun openOutside(file: File): Boolean =
+        runCatching { Desktop.getDesktop().open(file); true }.getOrElse { runCatching { ProcessBuilder("xdg-open", file.path).start(); true }.getOrDefault(false) }
 
     @Composable
     override fun rememberFilePicker(onPicked: (List<Any>) -> Unit): () -> Unit {
@@ -248,6 +267,8 @@ class DesktopPlatform(override val filesDir: File) : Platform {
     override fun systemBars(dark: Boolean) {}
     // Scheduled tasks run while the app is open; there is no system service to wake a closed app.
     override fun scheduleWake(atMillis: Long?) {}
+    // One full collection: with the settings this app runs under, the heap then shrinks to what is in use and the rest goes back to the system.
+    override fun trimMemory() { System.gc() }
     override fun makeUpdates(g: Graph): Updates = DesktopUpdates(g)
 }
 

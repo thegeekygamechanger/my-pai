@@ -114,12 +114,21 @@ fun HistoryScreen(onOpen: (Long) -> Unit, onMenu: (() -> Unit)?, onNew: () -> Un
         }
     }
 
+    var clearing by remember { mutableStateOf(false) }
+    if (clearing) AlertDialog(
+        onDismissRequest = { clearing = false },
+        title = { Text("Clear all chats?") },
+        text = { Text("${(listed?.size ?: 0).let { n -> if (n == 1) "The one chat here and its attachments are" else "All $n chats and their attachments are" }} removed from this device, and from your linked devices when they next open. Files, memory notes and tasks stay. This cannot be undone.") },
+        confirmButton = { TextButton({ clearing = false; g.scope.launch { g.clearHistory(); kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { selected?.let(onDeleted) } } }) { Text("Clear all", color = cs.error) } },
+        dismissButton = { TextButton({ clearing = false }) { Text("Cancel") } },
+    )
     // Inside the slide-up sheet it takes the sheet's own ground and needs no room for the status bar.
     Box(Modifier.fillMaxSize().background(if (wide || inSheet) androidx.compose.ui.graphics.Color.Transparent else cs.surface)) {
         Column(if (inSheet) Modifier.fillMaxSize() else Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = if (onMenu != null) 4.dp else 22.dp, end = 8.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (onMenu != null) IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
                 Text("History", Modifier.weight(1f).padding(start = if (onMenu != null) 6.dp else 0.dp), style = if (wide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall)
+                if (!listed.isNullOrEmpty() && query.isBlank()) TextButton({ clearing = true }) { Text("Clear all") }
                 IconButton({ openShared = true }) { Icon(Icons.Rounded.QrCodeScanner, "Open a shared chat") }
                 if (onMenu != null) IconButton(onNew) { Icon(Icons.Rounded.Add, "New chat") }
             }

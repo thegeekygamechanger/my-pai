@@ -128,6 +128,19 @@ fun AppRoot(host: Host) {
         PocketTheme((s ?: first).theme, (s ?: first).dynamicColor, (s ?: first).pureBlack) {
             Box(Modifier.fillMaxSize()) {
                 if (s != null) AppBody(host, s)
+                // A file opened from a chat is shown by the app itself, over whatever screen is open.
+                g.fileOnScreen.collectAsState().value?.let { f -> FileViewer(f) { g.fileOnScreen.value = null } }
+                // Memory the start-up needed is handed back once the app has settled, and again whenever it is left in the background.
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(6000); g.trimMemory()
+                    var front = true
+                    while (true) {
+                        kotlinx.coroutines.delay(5000)
+                        val now = g.platform.inForeground()
+                        if (front && !now) { kotlinx.coroutines.delay(10_000); if (!g.platform.inForeground() && g.runs.runs.value.isEmpty()) g.trimMemory() }
+                        front = now
+                    }
+                }
                 // A question from another program on this computer is asked over whatever screen is open.
                 if (s != null && s.serve) ServeAskDialog()
                 Opening(loaded = s != null)

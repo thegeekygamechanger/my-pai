@@ -18,6 +18,10 @@ import java.io.File
 interface Platform {
     val isDesktop: Boolean
     val versionName: String
+    /** Which build of that version this is: 0 for the first, 1 for an improved build released under the same version, and so on. */
+    val revision: Int get() = 0
+    /** What the update check compares: the version, and after a dash the build of it. The person is only ever shown [versionName]. */
+    val updateVersion: String get() = if (revision > 0) "$versionName-$revision" else versionName
     val debug: Boolean
     /** Where the app keeps its files. */
     val filesDir: File
@@ -55,6 +59,14 @@ interface Platform {
     /** Turns what the file picker returned (a Uri on Android, a File on a computer) into an attachment. */
     fun importAttachment(source: Any): Picked
     fun thumbnail(path: String, maxPx: Int = 512): ImageBitmap?
+    /** Any picture file, decoded no larger than [maxPx] on its longer side. */
+    fun picture(file: java.io.File, maxPx: Int = 2400): ImageBitmap? = null
+    /** How many pages a PDF has, where the device can draw PDFs itself; 0 where it cannot. */
+    fun pdfPages(file: java.io.File): Int = 0
+    /** One page of a PDF as a picture [widthPx] wide. */
+    fun pdfPage(file: java.io.File, index: Int, widthPx: Int): ImageBitmap? = null
+    /** Hands a file to another app on the device. False when no app there opens that kind of file. */
+    fun openOutside(file: java.io.File): Boolean { openFile(file); return true }
 
     @Composable fun rememberFilePicker(onPicked: (List<Any>) -> Unit): () -> Unit
     @Composable fun rememberNotificationAsk(): () -> Unit
@@ -79,6 +91,8 @@ interface Platform {
     fun scheduleWake(atMillis: Long?)
 
     /** How this system finds and installs a newer release. */
+    /** Gives memory the app holds but does not need back to the system. */
+    fun trimMemory() {}
     fun makeUpdates(g: Graph): Updates
 }
 

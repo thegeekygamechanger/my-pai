@@ -642,19 +642,19 @@ private fun ProducedFile(row: UiRow.Note, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
         if (picture != null) {
             val bmp = rememberThumb(picture, 1600)
-            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.padding(bottom = 8.dp).widthIn(max = 560.dp).clip(MaterialTheme.shapes.large).clickable { g.platform.openFile(file) }) {
+            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.padding(bottom = 8.dp).widthIn(max = 560.dp).clip(MaterialTheme.shapes.large).clickable { g.viewFile(file) }) {
                 if (bmp != null) Image(bmp, "$name. Opens in full size.", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                 else Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Image, null, tint = cs.onSurfaceVariant) }
             }
         }
-        Surface(onClick = { g.platform.openFile(file) }, shape = MaterialTheme.shapes.large, color = cs.secondaryContainer.copy(alpha = 0.7f), contentColor = cs.onSecondaryContainer, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+        Surface(onClick = { g.viewFile(file) }, shape = MaterialTheme.shapes.large, color = cs.secondaryContainer.copy(alpha = 0.7f), contentColor = cs.onSecondaryContainer, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
             Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Rounded.InsertDriveFile, null, Modifier.size(22.dp))
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("Saved in Files", style = MaterialTheme.typography.bodySmall, color = cs.onSecondaryContainer.copy(alpha = 0.75f))
                 }
-                TextButton({ g.platform.openFile(file) }) { Text("Open") }
+                TextButton({ g.viewFile(file) }) { Text("Open") }
                 TextButton({ g.platform.shareFile(file) }) { Text(if (g.platform.isDesktop) "Folder" else "Share") }
             }
         }
@@ -691,7 +691,7 @@ private fun MediaView(made: Attachment) {
     Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
         if (made.kind == "image") {
             val bmp = rememberThumb(made.path, 1600)
-            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.widthIn(max = 520.dp).clip(MaterialTheme.shapes.large).clickable { g.platform.openFile(file) }) {
+            Surface(shape = MaterialTheme.shapes.large, color = cs.surfaceContainerHigh, modifier = Modifier.widthIn(max = 520.dp).clip(MaterialTheme.shapes.large).clickable { g.viewFile(file) }) {
                 if (bmp != null) Image(bmp, "Created picture. Opens in full size.", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                 else Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Image, null, tint = cs.onSurfaceVariant) }
             }
