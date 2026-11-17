@@ -15,7 +15,7 @@ data class WeatherNow(val tempC: Int, val kind: String, val day: Boolean)
  * shape the greeting and the colours of the first screen. Nothing is asked for when no city is set.
  */
 object Weather {
-    private val http by lazy { OkHttpClient.Builder().followSslRedirects(false).connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build() }
+    private val http by lazy { OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build() }
 
     fun kind(code: Int): String = when (code) {
         0, 1 -> "clear"

@@ -28,7 +28,7 @@ val SPEECH_LANGUAGES = listOf(
  * by itself and copes well with accents, which is why the computer app uses it for voice typing.
  */
 object Transcribe {
-    private val http by lazy { OkHttpClient.Builder().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).writeTimeout(90, TimeUnit.SECONDS).build() }
+    private val http by lazy { OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).writeTimeout(90, TimeUnit.SECONDS).build() }
     /** Services with a transcription model, best first. */
     private val MODELS = listOf("groq" to "whisper-large-v3", "openai" to "whisper-1")
 

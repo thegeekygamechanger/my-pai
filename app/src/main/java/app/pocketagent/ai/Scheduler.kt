@@ -53,7 +53,8 @@ class Scheduler(private val g: Graph) {
         val chatId = g.newChat(agent = s.agent)
         g.dao.rename(chatId, s.title.ifBlank { "Scheduled task" })
         if (!manual) started += chatId
-        g.runs.send(chatId, JsonArray(listOf(buildJsonObject { put("type", "text"); put("text", s.prompt) })))
+        // A routine sends its steps one after another in the same chat; a plain task is a routine of one step.
+        g.runs.sendSteps(chatId, listOf(s.prompt) + s.steps)
         return chatId
     }
 
@@ -69,6 +70,8 @@ class Scheduler(private val g: Graph) {
         fun next(s: Schedule, after: Long, zone: ZoneId = ZoneId.systemDefault()): Long? {
             var t = ZonedDateTime.ofInstant(Instant.ofEpochMilli(after), zone).withHour(s.hour.coerceIn(0, 23)).withMinute(s.minute.coerceIn(0, 59)).withSecond(0).withNano(0)
             if (t.toInstant().toEpochMilli() <= after) t = t.plusDays(1)
+            // A routine kept for running by hand has no time of its own.
+            if (s.repeat == "never") return null
             if (s.repeat == "once") return if (s.lastRun > 0) null else t.toInstant().toEpochMilli()
             repeat(8) {
                 val day = t.dayOfWeek
@@ -86,6 +89,7 @@ class Scheduler(private val g: Graph) {
         fun describe(s: Schedule): String {
             val time = "%02d:%02d".format(s.hour, s.minute)
             return when (s.repeat) {
+                "never" -> "When you run it"
                 "once" -> "Once at $time"
                 "weekdays" -> "Weekdays at $time"
                 "weekly" -> DayOfWeek.of(s.weekday.coerceIn(1, 7)).name.lowercase().replaceFirstChar { it.uppercase() } + "s at $time"

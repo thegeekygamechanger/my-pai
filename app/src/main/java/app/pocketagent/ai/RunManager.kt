@@ -91,7 +91,10 @@ class RunManager(
 
     private val jobs = ConcurrentHashMap<Long, Job>()
     private val approvals = ConcurrentHashMap<Long, CompletableDeferred<Decision>>()
-    private val alwaysAllowed = ConcurrentHashMap<Long, MutableSet<String>>()
+    /** Tools the person allowed "for this task": gone the moment the task ends, whether it finished, failed or was stopped. */
+    private val taskAllowed = ConcurrentHashMap<Long, MutableSet<String>>()
+    /** Chats whose running task has read something worded as instructions: until it ends, nothing that changes anything runs unasked. */
+    private val shielded: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val assemblers = ConcurrentHashMap<Long, LiveReply>()
     /** Optional request extras the service has rejected; left off for the rest of this app session. */
     private val disabled: MutableSet<Feature> = Collections.synchronizedSet(LinkedHashSet())
@@ -104,7 +107,21 @@ class RunManager(
     fun rejectedFeatures(): Set<Feature> = disabled.toSet()
 
     /** Adds the user's message and starts replying. */
-    fun send(chatId: Long, content: JsonArray) = launchRun(chatId) {
+    fun send(chatId: Long, content: JsonArray) = launchRun(chatId) { ask(chatId, content) }
+
+    /**
+     * A routine: several requests sent one after another in the same chat, each when the one before has finished.
+     * Every step is an ordinary request, so every step asks before it changes anything. A step that fails or is
+     * stopped ends the routine there.
+     */
+    fun sendSteps(chatId: Long, steps: List<String>) {
+        fun block(text: String) = JsonArray(listOf(buildJsonObject { put("type", "text"); put("text", text) }))
+        val all = steps.filter { it.isNotBlank() }
+        if (all.isEmpty()) return
+        launchRun(chatId, more = all.drop(1).map(::block)) { ask(chatId, block(all.first())) }
+    }
+
+    private suspend fun ask(chatId: Long, content: JsonArray) {
         repairDangling(chatId, "Interrupted before this ran.")
         val now = System.currentTimeMillis()
         dao.insert(Msg(chatId = chatId, role = "user", content = blobs.pack(chatId, content.toString()), createdAt = now))
@@ -155,15 +172,23 @@ class RunManager(
         }
     }
 
-    private fun launchRun(chatId: Long, before: suspend () -> Unit) {
+    private fun launchRun(chatId: Long, more: List<JsonArray> = emptyList(), before: suspend () -> Unit) {
         if (jobs.containsKey(chatId)) return
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 before()
-                loop(chatId)
+                var ok = loop(chatId, last = more.isEmpty())
+                for ((i, step) in more.withIndex()) {
+                    if (!ok) { note(chatId, "info", "The routine stopped at step ${i + 1} of ${more.size + 1}, so the later steps were not run."); break }
+                    ask(chatId, step)
+                    ok = loop(chatId, last = i == more.lastIndex)
+                }
             } finally {
                 jobs.remove(chatId)
                 approvals.remove(chatId)
+                // What was allowed "for this task" ends with the task.
+                taskAllowed.remove(chatId)
+                shielded.remove(chatId)
                 assemblers.remove(chatId)
                 _runs.update { it - chatId }
                 host.runsChanged(jobs.isNotEmpty())
@@ -193,16 +218,23 @@ class RunManager(
         dao.insert(Msg(chatId = chatId, role = "note", content = text, createdAt = System.currentTimeMillis(), stopReason = kind))
     }
 
-    private suspend fun loop(chatId: Long) {
+    /**
+     * One request and everything it leads to, until the model has nothing more to do.
+     * @param last false for a step of a routine that has more steps after it: the person is told when the whole routine is done, not after each step
+     * @return true when it ended normally, so a routine may go on to its next step
+     */
+    private suspend fun loop(chatId: Long, last: Boolean = true): Boolean {
         var endNote: Pair<String, String>? = null
         var preview = ""
         var failed = false
-        val chat = dao.chat(chatId) ?: return
+        val chat = dao.chat(chatId) ?: return false
         try {
             repairDangling(chatId, "Interrupted before this ran.")
             produced.remove(chatId)
             val s = host.settings()
             val provider = host.provider(chat.provider) ?: throw ApiException(ApiException.Kind.NO_KEY, "The service this chat used is no longer set up. Pick another model.")
+            // Offline mode: only a model on the person's own device or network may answer.
+            if (s.offline && !(provider.local && Net.localUrl(provider.baseUrl))) throw ApiException(ApiException.Kind.BAD_REQUEST, "Offline mode is on, and ${provider.name} is on the internet. Pick an Ollama model on this device or your network for this chat, or turn Offline mode off in Settings.")
             // A chat set to Auto gets its model now, from what was just asked; it then stays the same for the whole run.
             val model = if (chat.model != AutoModel.ID) chat.model else {
                 val history = dao.messages(chatId)
@@ -214,7 +246,7 @@ class RunManager(
             }
             val cap = host.modelInfo(model)?.maxOutput?.takeIf { it > 0 }?.toInt() ?: if (ModelCaps.adaptive(model)) 128_000 else 8_192
             val server = Providers.serverTools(provider)
-            val cfg = RunConfig(
+            var cfg = RunConfig(
                 provider = provider, model = model, effort = chat.effort, maxTokens = minOf(s.maxOutput, cap), customInstructions = s.instructions(),
                 // A Claude model always has the code sandbox, in Chat as in Work: it is how documents are converted and charts and office files are made.
                 agent = chat.agent, web = chat.web && server, code = server, memory = chat.memory, fast = chat.fast && server,
@@ -229,10 +261,24 @@ class RunManager(
             val budget = if (chat.agent) s.budgetK * 1000L else 0L
             var step = 0
             var spent = 0L
+            // The backup the person chose, for when this service fails or has had enough for now. Used at most once in a task.
+            var backup = backupFor(s, cfg)
             while (true) {
                 step++
                 setState(chatId) { it.copy(step = step, phase = Phase.CONNECTING, live = emptyList(), apiId = "", status = "", done = emptyMap(), runningTool = "") }
-                val msg = request(chatId, cfg)
+                val msg = try {
+                    request(chatId, cfg, if (backup != null) 1 else MAX_RETRIES)
+                } catch (e: ApiException) {
+                    val next = backup?.takeIf { e.kind in BACKUP_KINDS } ?: throw e
+                    backup = null
+                    assemblers.remove(chatId)
+                    // Reasoning written by one model is not handed to another.
+                    stripThinking(chatId)
+                    note(chatId, "info", "${cfg.provider.name} could not answer (${e.friendly.trimEnd('.')}). Carrying on with your backup, ${next.provider.name} ${next.model}.")
+                    cfg = next
+                    step--
+                    continue
+                }
                 val text = msg.content.mapNotNull { (it as? JsonObject)?.takeIf { b -> b.str("type") == "text" }?.str("text") }.joinToString(" ").trim()
                 if (text.isNotEmpty()) preview = text.take(140)
                 saveReply(chatId, cfg, msg, preview)
@@ -277,7 +323,20 @@ class RunManager(
             note(chatId, "error", "Something went wrong: ${e.message ?: e.javaClass.simpleName}")
         }
         endNote?.let { note(chatId, it.first, it.second) }
-        host.finished(dao.chat(chatId) ?: chat, preview.ifEmpty { endNote?.second.orEmpty() }, failed)
+        if (last || failed) host.finished(dao.chat(chatId) ?: chat, preview.ifEmpty { endNote?.second.orEmpty() }, failed)
+        return !failed
+    }
+
+    /** The settings for the backup model, or null when none is chosen, it is the model already in use, or it has no key. */
+    private fun backupFor(s: Settings, cfg: RunConfig): RunConfig? {
+        if (s.backupProvider.isBlank() || s.backupModel.isBlank()) return null
+        if (s.backupProvider == cfg.provider.id && s.backupModel == cfg.model) return null
+        val p = host.provider(s.backupProvider) ?: return null
+        if (host.key(p.id) == null) return null
+        if (s.offline && !(p.local && Net.localUrl(p.baseUrl))) return null
+        val cap = host.modelInfo(s.backupModel)?.maxOutput?.takeIf { it > 0 }?.toInt() ?: if (ModelCaps.adaptive(s.backupModel)) 128_000 else 8_192
+        val server = Providers.serverTools(p)
+        return cfg.copy(provider = p, model = s.backupModel, maxTokens = minOf(s.maxOutput, cap), web = cfg.web && server, code = server, fast = cfg.fast && server)
     }
 
     private fun sentFeatures(cfg: RunConfig, off: Set<Feature>): Set<Feature> {
@@ -293,7 +352,7 @@ class RunManager(
     }
 
     /** One request, with the recoveries that should never reach the user: dropped extras, retries, backoff. */
-    private suspend fun request(chatId: Long, cfg: RunConfig): ApiMessage {
+    private suspend fun request(chatId: Long, cfg: RunConfig, maxRetries: Int = MAX_RETRIES): ApiMessage {
         var attempt = 0
         var stripped = false
         while (true) {
@@ -348,7 +407,7 @@ class RunManager(
                     if (containers[chatId] != null && e.message.orEmpty().contains("container", ignoreCase = true)) { containers.remove(chatId); assemblers.remove(chatId); continue }
                     throw e
                 }
-                if (!e.retryable || attempt >= MAX_RETRIES) throw e
+                if (!e.retryable || attempt >= maxRetries) throw e
                 attempt++
                 assemblers.remove(chatId)
                 val wait = if (e.retryAfterSec > 0) minOf(e.retryAfterSec, 60) else minOf(2 shl attempt, 30)
@@ -471,7 +530,8 @@ class RunManager(
                 val id = u.str("id") ?: continue
                 val name = u.str("name").orEmpty()
                 val input = u.obj("input") ?: JsonObject(emptyMap())
-                val outcome = when {
+                val began = System.currentTimeMillis()
+                var outcome = when {
                     id in invalid -> ToolOutcome(buildJsonObject { put("INVALID_JSON", invalid[id].orEmpty()) }.toString(), true)
                     !approved(chatId, chat, id, name, input) -> ToolOutcome("The person declined this action. Do not try it again; ask what they would like instead.", true)
                     name == Tools.SANDBOX_PUT -> {
@@ -481,9 +541,23 @@ class RunManager(
                     else -> {
                         setState(chatId) { it.copy(phase = Phase.TOOL, runningTool = id) }
                         // Interruptible, so Stop also ends a long wait such as a video being made.
-                        kotlinx.coroutines.runInterruptible(Dispatchers.IO) { tools.run(chatId, name, input) }
+                        kotlinx.coroutines.runInterruptible(Dispatchers.IO) { tools.run(chatId, name, input, id) }
                     }
                 }
+                // What a tool brings back from outside is data. If it is worded as orders to the model, it is marked,
+                // the person is told, and nothing more runs unasked in this task.
+                if (!outcome.isError && (name in READS_OUTSIDE || tools.origin(name) != null)) Shield.flag(outcome.text)?.let { sign ->
+                    val from = tools.describe(name, input)
+                    outcome = outcome.copy(text = Shield.wrap(from, outcome.text))
+                    shielded += chatId
+                    taskAllowed.remove(chatId)
+                    note(chatId, "error", Shield.notice(from, sign))
+                }
+                // An incognito chat leaves no trace, so its calls are not written down either.
+                if (!chat.uid.startsWith(app.pocketagent.data.INCOGNITO)) tools.log?.add(ToolCall(
+                    at = began, chat = chatId, server = tools.home(name), tool = tools.origin(name)?.second ?: name, args = ActivityLog.args(input), ok = !outcome.isError,
+                    summary = ActivityLog.summary(outcome.text), tokens = ActivityLog.tokens(input.toString(), outcome.text), ms = System.currentTimeMillis() - began,
+                ))
                 results[id] = toolResult(id, outcome)
                 setState(chatId) { it.copy(done = it.done + (id to outcome), runningTool = "") }
             }
@@ -520,11 +594,19 @@ class RunManager(
         val risk = tools.risk(name, input)
         val harmless = name == "update_tasks" || name == "get_time"
         // Something that leaves the phone for good (an email, a change on GitHub) is asked about every time, whatever the setting.
-        val auto = risk != Risk.OUTWARD && (when (chat.permission) {
-            "full_auto" -> true
-            "ask" -> harmless
-            else -> risk == Risk.READ
-        } || (risk != Risk.DESTRUCTIVE && alwaysAllowed[chatId]?.contains(name) == true))
+        val outside = tools.origin(name) != null
+        val granted = taskAllowed[chatId]?.contains(name) == true
+        val auto = when {
+            // After a result that tried to give orders, only looking is done unasked.
+            chatId in shielded -> harmless || (risk == Risk.READ && chat.permission != "ask")
+            // An email or a change on GitHub is asked about every time. A tool of an outside server is too, unless the person allowed it for this task.
+            risk == Risk.OUTWARD -> outside && granted
+            else -> when (chat.permission) {
+                "full_auto" -> true
+                "ask" -> harmless
+                else -> risk == Risk.READ
+            } || (risk != Risk.DESTRUCTIVE && granted)
+        }
         if (auto) return true
         val waiter = CompletableDeferred<Decision>()
         approvals[chatId] = waiter
@@ -538,12 +620,20 @@ class RunManager(
             setState(chatId) { it.copy(pending = null) }
             host.approvalResolved(chatId)
         }
-        if (decision == Decision.ALLOW_ALWAYS) alwaysAllowed.getOrPut(chatId) { Collections.synchronizedSet(HashSet()) }.add(name)
+        // "For this task": the name of the choice is from when it lasted longer; it now ends with the task.
+        if (decision == Decision.ALLOW_ALWAYS && risk != Risk.DESTRUCTIVE && (risk != Risk.OUTWARD || outside)) taskAllowed.getOrPut(chatId) { Collections.synchronizedSet(HashSet()) }.add(name)
         return decision != Decision.DENY
     }
 
     companion object {
         private const val MAX_RETRIES = 4
+        /** Failures a backup model is worth trying after: the service is down, busy, out of credit, or refuses the key or the model. */
+        private val BACKUP_KINDS = setOf(
+            ApiException.Kind.RATE_LIMIT, ApiException.Kind.OVERLOADED, ApiException.Kind.SERVER, ApiException.Kind.NETWORK,
+            ApiException.Kind.BILLING, ApiException.Kind.AUTH, ApiException.Kind.NOT_FOUND, ApiException.Kind.PERMISSION,
+        )
+        /** The app's own tools that bring in text somebody else wrote. */
+        private val READS_OUTSIDE = setOf("read_file", "github", "gmail_search", "gmail_read")
         /** How a note about a file the sandbox produced begins; the chat shows such a note as a file to open. */
         const val SAVED = "Saved to Files: "
     }

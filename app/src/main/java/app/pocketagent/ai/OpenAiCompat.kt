@@ -34,9 +34,9 @@ import kotlin.coroutines.coroutineContext
 object OpenAiCompat {
 
     /** The phone's tools as "function" tools. The memory tool, which Claude knows natively, is spelled out here. */
-    fun tools(cfg: RunConfig, clientTools: Tools?): JsonArray = buildJsonArray {
+    fun tools(cfg: RunConfig, clientTools: Tools?, focus: ToolFocus? = null): JsonArray = buildJsonArray {
         if (clientTools == null) return@buildJsonArray
-        for (t in clientTools.definitions(eager = false, mediaOnly = !cfg.agent)) {
+        for (t in clientTools.definitions(eager = false, mediaOnly = !cfg.agent, focus = focus)) {
             val o = t as JsonObject
             add(buildJsonObject {
                 put("type", "function")
@@ -65,7 +65,7 @@ object OpenAiCompat {
         put("model", cfg.model)
         put("stream", true)
         putJsonObject("stream_options") { put("include_usage", true) }
-        val toolList = if (Feature.TOOLS in disabled) JsonArray(emptyList()) else tools(cfg, clientTools)
+        val toolList = if (Feature.TOOLS in disabled) JsonArray(emptyList()) else tools(cfg, clientTools, RequestBuilder.focus(messages))
         if (toolList.isNotEmpty()) put("tools", toolList)
         if (Feature.EFFORT !in disabled) {
             val effort = when (cfg.effort) { "xhigh", "max" -> "high"; else -> cfg.effort }
@@ -220,7 +220,7 @@ class OpenAiAssembler : LiveReply {
 }
 
 class OpenAiApi {
-    private val http = OkHttpClient.Builder()
+    private val http = OkHttpClient.Builder().guarded()
         // Never carried from an https address to a plain http one, key and all.
         .followSslRedirects(false)
         .connectTimeout(30, TimeUnit.SECONDS)

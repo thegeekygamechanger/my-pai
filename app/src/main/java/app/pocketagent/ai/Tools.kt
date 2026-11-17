@@ -30,11 +30,44 @@ interface ToolHost {
 
 data class ToolOutcome(val text: String, val isError: Boolean = false)
 
+/** Tools that are not the app's own: those of MCP servers, and those a linked computer lends. They all leave the device, so each call is asked about. */
+interface OutsideTools {
+    fun specs(): List<ToolSpec>
+    fun handles(name: String): Boolean
+    /** One line for the timeline, or null when the tool is not one of these. */
+    fun describe(name: String): String?
+    /** Where the tool lives and what it is called there. */
+    fun origin(name: String): Pair<String, String>?
+    fun run(name: String, input: JsonObject): String
+}
+
+/** What a call would do, said before it runs, and whether it can be taken back afterwards. */
+data class ToolPreview(val text: String, val undo: Boolean, val undoNote: String)
+
 /**
  * The tools that run on the phone. Web search, page fetch and the code sandbox are not here:
  * those run on Anthropic's side and never touch the device.
  */
-class Tools(private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null, val media: Media? = null, val mcp: Mcp? = null) {
+class Tools(
+    private val workspace: Workspace, private val memory: Workspace, private val host: ToolHost, val integrations: Integrations? = null, val media: Media? = null, val mcp: Mcp? = null,
+    /** Tools a linked computer lends through the pairing. */
+    val bridge: OutsideTools? = null,
+    private val undo: app.pocketagent.data.UndoStore? = null,
+    val log: ActivityLog? = null,
+) {
+    private val outside: List<OutsideTools> get() = listOfNotNull(mcp, bridge)
+    private fun outside(name: String): OutsideTools? = outside.firstOrNull { it.handles(name) }
+
+    /** The server and tool behind a name the model uses, when the tool is not the app's own. */
+    fun origin(name: String): Pair<String, String>? = outside(name)?.origin(name)
+
+    /** Where a tool runs, for the activity log. */
+    fun home(name: String): String = origin(name)?.first ?: when {
+        integrations?.handles(name) == true -> if (name.startsWith("gmail")) "Gmail" else "GitHub"
+        media?.handles(name) == true -> "Pictures and videos"
+        name in SERVER_SIDE -> "AI service"
+        else -> "This device"
+    }
 
     private fun prop(type: String, description: String) = buildJsonObject { put("type", type); put("description", description) }
 
@@ -87,10 +120,13 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
      * @param mediaOnly the tools an ordinary chat has too: the connected accounts (GitHub, Gmail) and making pictures
      *   and videos. Files, memory and the task list belong to Work.
      */
-    fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false): JsonArray = buildJsonArray {
+    fun definitions(eager: Boolean, mediaOnly: Boolean = false, sandbox: Boolean = false, focus: ToolFocus? = null): JsonArray = buildJsonArray {
         // A plain chat has no task list, memory or editing, but it can still look into the workspace and save a file there when asked to.
         val own = if (mediaOnly) specs.filter { it.name in CHAT_FILE_TOOLS } else specs
-        for (s in own + (if (sandbox) listOf(SANDBOX_SPEC) else emptyList()) + integrations?.specs().orEmpty() + media?.specs().orEmpty() + mcp?.specs().orEmpty()) add(buildJsonObject {
+        // In offline mode nothing that reaches the internet is offered: no accounts, no picture services, and only outside tools that are on this device or network.
+        val accounts = if (Net.offline) emptyList() else integrations?.specs().orEmpty() + media?.specs().orEmpty()
+        val lent = ToolPicker.pick(outside.flatMap { it.specs() }, focus, { origin(it)?.first })
+        for (s in own + (if (sandbox) listOf(SANDBOX_SPEC) else emptyList()) + accounts + lent) add(buildJsonObject {
             put("name", s.name)
             put("description", s.description)
             if (eager) put("eager_input_streaming", true)
@@ -102,14 +138,14 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         })
     }
 
-    fun risk(name: String, input: JsonObject): Risk = mcp?.risk(name) ?: integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
+    fun risk(name: String, input: JsonObject): Risk = (if (outside(name) != null) Risk.OUTWARD else null) ?: integrations?.risk(name, input) ?: media?.risk(name) ?: when (name) {
         MEMORY -> if (input.str("command") == "view") Risk.READ else Risk.WRITE
         SANDBOX_PUT -> Risk.READ
         else -> byName[name]?.risk ?: Risk.WRITE
     }
 
     /** One line for the timeline and the approval sheet. */
-    fun describe(name: String, input: JsonObject): String = mcp?.describe(name) ?: integrations?.describe(name, input) ?: media?.describe(name, input) ?: when (name) {
+    fun describe(name: String, input: JsonObject): String = outside(name)?.describe(name) ?: integrations?.describe(name, input) ?: media?.describe(name, input) ?: when (name) {
         "list_files" -> "List " + (input.str("path")?.ifBlank { null } ?: "workspace")
         "read_file" -> "Read " + input.str("path").orEmpty()
         "write_file" -> "Write " + input.str("path").orEmpty()
@@ -132,17 +168,95 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
     }
 
     /** Runs one call. Never throws: a failure comes back as an error result the model can read and react to. */
-    fun run(chatId: Long, name: String, input: JsonObject): ToolOutcome = try {
+    /** @param callId the id of this call; with it, a change to a file is remembered so it can be undone */
+    fun run(chatId: Long, name: String, input: JsonObject, callId: String = ""): ToolOutcome = try {
         val spec = byName[name] ?: integrations?.specs()?.firstOrNull { it.name == name } ?: media?.specs()?.firstOrNull { it.name == name }
         if (spec != null) {
             val missing = spec.required.filter { input[it] == null }
             if (missing.isNotEmpty()) throw ToolError("Missing required field: " + missing.joinToString())
         }
-        ToolOutcome(clip(execute(chatId, name, input)))
+        val kept = callId.isNotEmpty() && touched(name, input)?.let { f -> undo?.remember(callId, f, describe(name, input)) } == true
+        try {
+            ToolOutcome(clip(execute(chatId, name, input)))
+        } catch (e: Exception) {
+            if (kept) undo?.forget(callId)
+            throw e
+        }
     } catch (e: ToolError) {
         ToolOutcome(e.message ?: "The tool failed.", isError = true)
     } catch (e: Exception) {
         ToolOutcome("The tool failed: ${e.javaClass.simpleName}: ${e.message}", isError = true)
+    }
+
+    /** The file a call would change, when it is one the app can put back. */
+    private fun touched(name: String, input: JsonObject): java.io.File? = runCatching {
+        when (name) {
+            "write_file", "edit_file", "delete_file" -> input.str("path")?.let { workspace.resolve(it) }
+            MEMORY -> when (input.str("command")) {
+                "create", "str_replace", "insert", "delete" -> input.str("path")?.let { memory.resolve(memPath(it)) }
+                else -> null
+            }
+            else -> null
+        }
+    }.getOrNull()
+
+    fun canUndo(callId: String): Boolean = undo?.can(callId) == true
+
+    /** Takes back the change one call made to a file. Returns what was undone, or null. */
+    fun undo(callId: String): String? = undo?.undo(callId)
+
+    /**
+     * What a call would change, worked out without doing it: the dry run shown on the approval card.
+     * It also says whether the change can be taken back afterwards, and when it cannot, why.
+     */
+    fun preview(name: String, input: JsonObject): ToolPreview {
+        val from = origin(name)
+        if (from != null) return ToolPreview("Sends this to ${from.first}. What the server does with it is up to the server.", false, "Cannot be undone from here: it happens on ${from.first}.")
+        if (integrations?.handles(name) == true) return ToolPreview("", false, if (risk(name, input) == Risk.OUTWARD) "Cannot be undone from here once it is sent." else "Reads only; nothing changes.")
+        val file = touched(name, input)
+        val can = undo != null && file != null && !file.isDirectory && (!file.isFile || file.length() <= app.pocketagent.data.UndoStore.MAX_BYTES)
+        val yes = "Can be undone afterwards, from this step in the chat."
+        fun size(n: Int) = if (n == 1) "1 character" else "%,d characters".format(n)
+        return when (name) {
+            "write_file" -> {
+                val new = input.str("content").orEmpty()
+                val old = file?.takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
+                val what = if (old == null) "Creates ${input.str("path").orEmpty()} (${size(new.length)}, ${new.lines().size} lines)."
+                else if (old == new) "Leaves ${input.str("path").orEmpty()} exactly as it is."
+                else {
+                    val before = old.lines(); val after = new.lines()
+                    val gone = before.toMutableList().apply { after.forEach { remove(it) } }.size
+                    val added = after.toMutableList().apply { before.forEach { remove(it) } }.size
+                    "Replaces ${input.str("path").orEmpty()}: ${size(old.length)} become ${size(new.length)}; $added lines added or changed, $gone removed."
+                }
+                ToolPreview(what, can, if (can) yes else "Too large to keep a copy of, so it cannot be undone.")
+            }
+            "edit_file" -> {
+                val old = file?.takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
+                val hits = old?.let { Regex(Regex.escape(input.str("old_text").orEmpty())).findAll(it).count() } ?: 0
+                val what = when {
+                    old == null -> "There is no file at ${input.str("path").orEmpty()}, so nothing will change."
+                    hits == 0 -> "The text to replace is not in ${input.str("path").orEmpty()}, so nothing will change."
+                    input.bool("replace_all") == true -> "Changes $hits place${if (hits == 1) "" else "s"} in ${input.str("path").orEmpty()}."
+                    hits > 1 -> "The text appears $hits times in ${input.str("path").orEmpty()}, so the edit will be refused."
+                    else -> "Changes one place in ${input.str("path").orEmpty()}."
+                }
+                ToolPreview(what, can, if (can) yes else "Cannot be undone.")
+            }
+            "delete_file" -> when {
+                file == null || !file.exists() -> ToolPreview("There is nothing at ${input.str("path").orEmpty()}, so nothing will change.", false, "")
+                file.isDirectory -> ToolPreview("Deletes the folder ${input.str("path").orEmpty()} and the ${file.walkTopDown().count { it.isFile }} files in it.", false, "A folder cannot be brought back.")
+                else -> ToolPreview("Deletes ${input.str("path").orEmpty()} (${"%,d".format(file.length())} bytes).", can, if (can) yes else "Too large to keep a copy of, so it cannot be undone.")
+            }
+            MEMORY -> when (input.str("command")) {
+                "view" -> ToolPreview("", false, "Reads only; nothing changes.")
+                "rename" -> ToolPreview("Renames a memory note.", false, "Cannot be undone from here; rename it back by hand.")
+                else -> ToolPreview(if (file?.isFile == true) "Changes the memory note ${file.name}." else "Creates a memory note.", can, if (can) yes else "Cannot be undone.")
+            }
+            "copy_to_clipboard" -> ToolPreview("Replaces what is on the clipboard.", false, "What was on the clipboard before is not kept.")
+            SANDBOX_PUT -> ToolPreview("Sends a copy of ${input.str("path").orEmpty()} to the AI service's sandbox.", false, "The copy there is removed by the service after 30 days.")
+            else -> ToolPreview("", false, if (risk(name, input) == Risk.READ) "Reads only; nothing changes." else "")
+        }
     }
 
     private fun int(input: JsonObject, k: String): Int? = (input[k] as? JsonPrimitive)?.intOrNull
@@ -162,7 +276,7 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
         "copy_to_clipboard" -> { host.copyToClipboard(need(input, "text")); "Copied to the clipboard." }
         MEMORY -> memoryCommand(input)
         else -> when {
-            mcp?.handles(name) == true -> mcp.run(name, input)
+            outside(name) != null -> outside(name)!!.run(name, input)
             integrations?.handles(name) == true -> integrations.run(name, input)
             media?.handles(name) == true -> media.run(name, input)
             else -> throw ToolError("Unknown tool: $name")
@@ -212,6 +326,8 @@ class Tools(private val workspace: Workspace, private val memory: Workspace, pri
 
     companion object {
         const val MEMORY = "memory"
+        /** Tools that run at the AI service, not on the device. */
+        val SERVER_SIDE = setOf("web_search", "web_fetch", "code_execution", "bash_code_execution", "text_editor_code_execution")
         /** The workspace tools a plain chat has: enough to save what was asked for, and to find and read it again. */
         val CHAT_FILE_TOOLS = setOf("list_files", "read_file", "write_file")
         const val MAX_RESULT = 150_000

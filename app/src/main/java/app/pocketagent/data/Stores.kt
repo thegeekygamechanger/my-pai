@@ -14,11 +14,16 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class SavedModel(val id: String, val name: String = "", val maxInput: Long = 0, val maxOutput: Long = 0)
 
-/** A task to run at a set time. [repeat] is "once", "daily", "weekdays" or "weekly"; [weekday] is 1 (Monday) to 7. */
+/**
+ * A task to run at a set time. [repeat] is "once", "daily", "weekdays", "weekly", or "never" for a routine that only
+ * runs when the person starts it; [weekday] is 1 (Monday) to 7. [steps] are further requests, sent one after another
+ * in the same chat once [prompt] is done: with them the task is a routine.
+ */
 @Serializable
 data class Schedule(
     val id: String, val title: String, val prompt: String, val agent: Boolean = false, val hour: Int = 9, val minute: Int = 0,
     val repeat: String = "daily", val weekday: Int = 1, val enabled: Boolean = true, val lastRun: Long = 0, val createdAt: Long = 0,
+    val steps: List<String> = emptyList(),
 )
 
 /** A device this one is linked with. */
@@ -76,9 +81,21 @@ data class Settings(
     val lastUpdateCheck: Long = 0,
     /** Chats on this device with a reply the person has not looked at yet (a scheduled task's result, a reply that came while they were elsewhere). */
     val unreadChats: List<Long> = emptyList(),
-    /** MCP servers the person added on this device. Their tokens are in the vault, not here, and neither is sent to linked devices. */
+    /** MCP servers the person added. Names and addresses reach linked devices; tokens are in each device's vault and never do. */
     val mcpServers: List<app.pocketagent.ai.McpServer> = emptyList(),
+    /** MCP servers removed here or on a linked device, and when, so a removal is not undone by an older copy elsewhere. */
+    val mcpGone: Map<String, Long> = emptyMap(),
     val fallbacks: Boolean = true,
+    /** The service and model to carry on with when the chat's own fails or hits a limit. Empty: none. */
+    val backupProvider: String = "",
+    val backupModel: String = "",
+    /** Offline mode: only models and tools on this device or the person's own network; nothing goes to the internet. */
+    val offline: Boolean = false,
+    /** On a computer: linked devices may use the MCP servers marked as lent. Off unless the person turns it on. */
+    val bridge: Boolean = false,
+    /** On a computer: other programs on it may read files, memory notes and tasks through a local MCP server. Off unless turned on. */
+    val serve: Boolean = false,
+    val servePort: Int = 18791,
     /** The model lists last fetched with the user's keys, by service, so the picker is instant and works offline. */
     val models: Map<String, List<SavedModel>> = emptyMap(),
     /** Tasks to run at set times, on this device. */

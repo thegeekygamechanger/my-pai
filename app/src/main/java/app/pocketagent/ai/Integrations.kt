@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
  * outside the phone (sending mail, writing to GitHub) is shown to the user for a yes or no first.
  */
 class Integrations(private val secret: (String) -> String?, private val githubUrl: String = "https://api.github.com", private val mailHosts: MailHosts = MailHosts()) {
-    private val http by lazy { OkHttpClient.Builder().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(40, TimeUnit.SECONDS).build() }
+    private val http by lazy { OkHttpClient.Builder().guarded().followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(40, TimeUnit.SECONDS).build() }
 
     fun githubOn() = !secret(GITHUB).isNullOrBlank()
     fun gmailOn() = !secret(GMAIL_USER).isNullOrBlank() && !secret(GMAIL_PASS).isNullOrBlank()
