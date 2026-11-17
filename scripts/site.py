@@ -50,7 +50,7 @@ def page(title, body, desc, script='', name='', extra=''):
 </header>
 {body}
 <footer>
-  <a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a href="{REPO}">GitHub</a>
+  <a href="whats-new.html">What's new</a><a href="compare.html">How it compares</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a href="{REPO}/blob/main/CONTRIBUTING.md">Contribute</a><a href="{REPO}">GitHub</a>
   <p>My PAI is open-source software, not affiliated with Anthropic, OpenAI, Google or any other AI service. Their product names are trademarks of their owners.</p>
 </footer>
 </div>
@@ -77,15 +77,19 @@ INDEX = f'''<section class="hero">
   {shot('home', 'The first screen')}
 </section>
 <section class="feature">
+  <div><h2>New: MCP servers</h2><p>Add tools from other services, then type @mcp in any chat. Every call asks you first.</p><a class="more" href="whats-new.html">See what is new</a></div>
+  <figure class="reel"><video src="reel.mp4" poster="shots/reel.jpg" controls muted loop playsinline preload="none" aria-label="A short film of what is new in My PAI"></video></figure>
+</section>
+<section class="feature flip">
   <div><h2>Ask anything</h2><p>Clear answers, with web search, images and PDFs.</p></div>
   {shot('chat', 'A chat')}
 </section>
-<section class="feature flip">
+<section class="feature">
   <div><h2>Hand over the work</h2><p>It plans, uses files, the web, GitHub and Gmail, and asks before it changes anything.</p></div>
   {shot('work', 'A piece of work in progress')}
 </section>
-<section class="feature">
-  <div><h2>Any model, your keys</h2><p>Claude, OpenAI, OpenRouter, Groq, Gemini and more. No account with us.</p></div>
+<section class="feature flip">
+  <div><h2>Any model, your keys</h2><p>Claude, OpenAI, Gemini, Ollama on your own computer and more. No account with us.</p></div>
   {shot('models', 'Choosing a model')}
 </section>
 <section class="grid">
@@ -136,7 +140,90 @@ def markdown(text):
     return '\n'.join(out)
 
 
+# How My PAI compares. Every cell about another project is what that project says about itself on the page listed
+# under it, read on the date below; "Not stated" means its own pages did not say. Nothing here is an opinion.
+COMPARED_ON = '17 November 2026'
+COMPARE_APPS = ['My PAI', 'Open WebUI', 'LibreChat', 'Jan', 'AnythingLLM', 'LobeHub (LobeChat)', 'Chatbox']
+COMPARE_ROWS = [
+    ('Licence', ['MIT', 'Open WebUI License (BSD-3-Clause terms plus a branding clause)', 'MIT', 'Apache 2.0', 'MIT', 'LobeHub Community License (Apache 2.0 with added conditions)', 'GPLv3 (Community Edition)']),
+    ('Android app', ['Yes', 'Not stated (installs as a web app)', 'Not stated', 'Not stated', 'Yes', 'Yes', 'Yes']),
+    ('Windows and Linux app', ['Yes', 'Yes', 'Not stated (runs in a browser)', 'Yes', 'Yes', 'Yes', 'Yes']),
+    ('macOS app', ['No', 'Yes', 'Not stated', 'Yes', 'Yes', 'Yes', 'Yes']),
+    ('iPhone app', ['No', 'Not stated', 'Not stated', 'Not stated', 'Not stated', 'Yes', 'Yes']),
+    ('Runs in a browser', ['No', 'Yes, on a server you host', 'Yes, on a server you host', 'Yes (Jan Web)', 'Yes, with Docker', 'Yes', 'Yes']),
+    ('Account', ['None, ever', 'A local account on your own server', 'An account on your own server', 'None for the desktop app', 'None for the desktop app', 'Sign-in for the cloud; can be self-hosted', 'Not stated']),
+    ('MCP servers', ['Yes, from 1.1.0', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']),
+    ('Ollama', ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']),
+    ('Paid plans from the project', ['None', 'Enterprise licence', 'None stated', 'None stated', 'Hosted cloud plans', 'Hosted cloud plans', 'Subscription for hosted models']),
+]
+COMPARE_SOURCES = [
+    ('Open WebUI', ['https://github.com/open-webui/open-webui', 'https://github.com/open-webui/open-webui/blob/main/LICENSE', 'https://docs.openwebui.com/getting-started/quick-start/', 'https://docs.openwebui.com/features/extensibility/mcp/', 'https://docs.openwebui.com/enterprise']),
+    ('LibreChat', ['https://github.com/LibreChat-AI/LibreChat', 'https://github.com/LibreChat-AI/LibreChat/blob/main/LICENSE', 'https://www.librechat.ai/docs/features/mcp', 'https://www.librechat.ai/tos']),
+    ('Jan', ['https://github.com/janhq/jan', 'https://github.com/janhq/jan/blob/main/LICENSE', 'https://docs.jan.ai/desktop', 'https://docs.jan.ai/desktop/integrations/mcp-servers']),
+    ('AnythingLLM', ['https://github.com/Mintplex-Labs/anything-llm', 'https://github.com/Mintplex-Labs/anything-llm/blob/master/LICENSE', 'https://anythingllm.com/mobile', 'https://docs.anythingllm.com/mcp-compatibility/overview', 'https://anythingllm.com/pricing']),
+    ('LobeHub (LobeChat)', ['https://github.com/lobehub/lobehub', 'https://github.com/lobehub/lobehub/blob/main/LICENSE', 'https://lobehub.com/downloads', 'https://lobehub.com/pricing']),
+    ('Chatbox', ['https://github.com/chatboxai/chatbox', 'https://github.com/chatboxai/chatbox/blob/main/LICENSE', 'https://chatboxai.app/en', 'https://docs.chatboxai.app/en/guides/mcp']),
+]
+
+
+def compare():
+    for _, cells in COMPARE_ROWS:
+        assert len(cells) == len(COMPARE_APPS)
+    e = html.escape
+    head = '<tr><th></th>' + ''.join('<th%s>%s</th>' % (' class="ours"' if i == 0 else '', e(a)) for i, a in enumerate(COMPARE_APPS)) + '</tr>'
+    body = '\n'.join('<tr><th>%s</th>%s</tr>' % (e(name), ''.join('<td%s>%s</td>' % (' class="ours"' if i == 0 else '', e(c)) for i, c in enumerate(cells))) for name, cells in COMPARE_ROWS)
+    sources = '\n'.join('<li><strong>%s</strong>: %s</li>' % (e(name), ', '.join('<a href="%s" rel="nofollow noopener">%s</a>' % (u, e(u.split('//')[1])) for u in urls)) for name, urls in COMPARE_SOURCES)
+    return f'''<article class="wide"><h1>How My PAI compares</h1>
+<p>My PAI is one of several apps with public source code that let you use AI with your own keys. They are good projects, and the right one depends on what you need. This page sets out plain facts side by side so you can choose. It is not a ranking.</p>
+<div class="table"><table>
+<thead>{head}</thead>
+<tbody>
+{body}
+</tbody>
+</table></div>
+<p>What each project says about itself, read on {COMPARED_ON}. "Not stated" means its own pages did not say, not that it is missing.</p>
+<h2>Where My PAI is different</h2>
+<ul>
+<li><strong>No account and no server to set up.</strong> Install it, add a key (or point it at Ollama) and start. There is nothing to sign in to.</li>
+<li><strong>Phone and computer in step.</strong> Chats, files and keys sync between your own devices, encrypted end to end, linked by a code or a QR picture. The relay in between stores nothing.</li>
+<li><strong>It asks first.</strong> Anything that changes a file, sends an email or calls an MCP server is shown to you for a yes or no.</li>
+<li><strong>Small and plain.</strong> One MIT-licensed codebase for Android, Windows and Linux, with no paid plan.</li>
+</ul>
+<h2>Where the others go further</h2>
+<ul>
+<li><strong>Apple devices.</strong> My PAI has no macOS or iPhone app. Several of the apps above do.</li>
+<li><strong>Teams.</strong> My PAI is for one person. Open WebUI, LibreChat and AnythingLLM can be hosted for many users.</li>
+<li><strong>A browser version.</strong> My PAI is an installed app only.</li>
+<li><strong>Years of features.</strong> These projects are older and larger, with plug-ins, marketplaces and document tools My PAI does not have.</li>
+</ul>
+<h2>Sources</h2>
+<ul class="sources">
+{sources}
+</ul>
+<h2>Found a mistake?</h2>
+<p>These projects change quickly. If anything here is wrong or out of date, please <a href="{REPO}/issues/new/choose">open an issue</a> and it will be corrected.</p>
+<p>All product names, logos and trademarks belong to their owners. My PAI is not affiliated with, endorsed by or sponsored by any project named on this page.</p>
+</article>'''
+
+
+def notes():
+    """Every release's notes, newest first, as (version, Markdown text)."""
+    d = os.path.join(ROOT, 'release-notes')
+    versions = sorted((f[:-3] for f in os.listdir(d) if f.endswith('.md')), key=lambda v: [int(x) for x in v.split('.')], reverse=True)
+    return [(v, open(os.path.join(d, v + '.md')).read().strip()) for v in versions]
+
+
+def changelog_kt():
+    """The same notes inside the app (Settings, What's new). Written here so the app and the site never differ."""
+    text = '\n\n'.join('## Version %s\n%s' % (v, body) for v, body in notes()).replace('$', "${'$'}")
+    assert '"""' not in text
+    path = os.path.join(ROOT, 'app/src/main/java/app/pocketagent/ui/Changelog.kt')
+    open(path, 'w').write('package app.pocketagent.ui\n\n// Written by scripts/site.py from release-notes/. Do not edit by hand.\n\n'
+                          '/** What changed in each version, newest first. */\ninternal val CHANGELOG_TEXT = """\n' + text + '\n""".trimIndent()\n')
+
+
 def main():
+    changelog_kt()
     docs = os.path.join(ROOT, 'docs')
     src = open(os.path.join(ROOT, 'app/src/main/java/app/pocketagent/ui/Docs.kt')).read()
 
@@ -147,10 +234,13 @@ def main():
     open(os.path.join(docs, 'terms.html'), 'w').write(page('Terms of use · My PAI', '<article><h1>Terms of use</h1>\n' + markdown(grab('TERMS_TEXT')) + '\n</article>', 'Terms of use for My PAI.', name='terms.html'))
     open(os.path.join(docs, 'privacy.html'), 'w').write(page('Privacy · My PAI', '<article><h1>Privacy</h1>\n' + markdown(grab('PRIVACY_TEXT')) + '\n</article>', 'How My PAI handles your data: on your device, encrypted, with no account and no tracking.', name='privacy.html'))
     open(os.path.join(docs, 'open-source.html'), 'w').write(page('Open source · My PAI', '<article><h1>Open source</h1>\n' + markdown(grab('LICENSES_TEXT')) + '\n</article>', 'My PAI is open source under the MIT licence.', name='open-source.html'))
+    whats_new = '<article><h1>What\'s new</h1>\n<p>Every version of My PAI and what changed in it, newest first.</p>\n<figure class="reel"><video src="reel.mp4" poster="shots/reel.jpg" controls muted loop playsinline preload="none" aria-label="A short film of what is new in My PAI"></video></figure>\n' + '\n'.join('<h2>Version %s</h2>\n%s' % (v, markdown(body)) for v, body in notes()) + '\n</article>'
+    open(os.path.join(docs, 'whats-new.html'), 'w').write(page('What\'s new · My PAI', whats_new, 'What changed in each version of My PAI.', name='whats-new.html'))
+    open(os.path.join(docs, 'compare.html'), 'w').write(page('How My PAI compares with other open-source AI apps', compare(), 'My PAI side by side with Open WebUI, LibreChat, Jan, AnythingLLM, LobeHub and Chatbox: licence, devices, accounts, MCP and Ollama.', name='compare.html'))
     shutil.copy(os.path.join(ROOT, 'desktop/icons/icon.png'), os.path.join(docs, 'icon.png'))
     open(os.path.join(docs, '.nojekyll'), 'w').write('')
     open(os.path.join(docs, 'robots.txt'), 'w').write('User-agent: *\nAllow: /\nSitemap: ' + SITE + 'sitemap.xml\n')
-    pages = ['', 'terms.html', 'privacy.html', 'open-source.html']
+    pages = ['', 'whats-new.html', 'compare.html', 'terms.html', 'privacy.html', 'open-source.html']
     open(os.path.join(docs, 'sitemap.xml'), 'w').write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + ''.join('  <url><loc>' + SITE + p + '</loc></url>\n' for p in pages) + '</urlset>\n')
 
 

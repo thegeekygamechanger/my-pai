@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How My PAI compares with other open-source AI apps</title>
+<meta name="description" content="My PAI side by side with Open WebUI, LibreChat, Jan, AnythingLLM, LobeHub and Chatbox: licence, devices, accounts, MCP and Ollama.">
+<link rel="canonical" href="https://thegeekygamechanger.github.io/my-pai/compare.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="My PAI">
+<meta property="og:title" content="How My PAI compares with other open-source AI apps">
+<meta property="og:description" content="My PAI side by side with Open WebUI, LibreChat, Jan, AnythingLLM, LobeHub and Chatbox: licence, devices, accounts, MCP and Ollama.">
+<meta property="og:url" content="https://thegeekygamechanger.github.io/my-pai/compare.html">
+<meta property="og:image" content="https://thegeekygamechanger.github.io/my-pai/shots/social.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How My PAI compares with other open-source AI apps">
+<meta name="twitter:description" content="My PAI side by side with Open WebUI, LibreChat, Jan, AnythingLLM, LobeHub and Chatbox: licence, devices, accounts, MCP and Ollama.">
+<meta name="twitter:image" content="https://thegeekygamechanger.github.io/my-pai/shots/social.jpg">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<script>
+// The colours behind the page follow the hour, as they do in the app.
+(function () { var h = new Date().getHours(); document.documentElement.dataset.phase = h >= 5 && h <= 11 ? 'morning' : h >= 12 && h <= 16 ? 'day' : h >= 17 && h <= 20 ? 'evening' : 'night'; })();
+</script>
+</head>
+<body data-device="desktop">
+<div class="wrap">
+<header>
+  <a class="mark" href="index.html"><img src="icon.png" alt="">My PAI</a>
+  <nav><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a class="pill" href="https://github.com/thegeekygamechanger/my-pai/releases/latest">Download</a></nav>
+</header>
+<article class="wide"><h1>How My PAI compares</h1>
+<p>My PAI is one of several apps with public source code that let you use AI with your own keys. They are good projects, and the right one depends on what you need. This page sets out plain facts side by side so you can choose. It is not a ranking.</p>
+<div class="table"><table>
+<thead><tr><th></th><th class="ours">My PAI</th><th>Open WebUI</th><th>LibreChat</th><th>Jan</th><th>AnythingLLM</th><th>LobeHub (LobeChat)</th><th>Chatbox</th></tr></thead>
+<tbody>
+<tr><th>Licence</th><td class="ours">MIT</td><td>Open WebUI License (BSD-3-Clause terms plus a branding clause)</td><td>MIT</td><td>Apache 2.0</td><td>MIT</td><td>LobeHub Community License (Apache 2.0 with added conditions)</td><td>GPLv3 (Community Edition)</td></tr>
+<tr><th>Android app</th><td class="ours">Yes</td><td>Not stated (installs as a web app)</td><td>Not stated</td><td>Not stated</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Windows and Linux app</th><td class="ours">Yes</td><td>Yes</td><td>Not stated (runs in a browser)</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>macOS app</th><td class="ours">No</td><td>Yes</td><td>Not stated</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>iPhone app</th><td class="ours">No</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Runs in a browser</th><td class="ours">No</td><td>Yes, on a server you host</td><td>Yes, on a server you host</td><td>Yes (Jan Web)</td><td>Yes, with Docker</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Account</th><td class="ours">None, ever</td><td>A local account on your own server</td><td>An account on your own server</td><td>None for the desktop app</td><td>None for the desktop app</td><td>Sign-in for the cloud; can be self-hosted</td><td>Not stated</td></tr>
+<tr><th>MCP servers</th><td class="ours">Yes, from 1.1.0</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Ollama</th><td class="ours">Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+<tr><th>Paid plans from the project</th><td class="ours">None</td><td>Enterprise licence</td><td>None stated</td><td>None stated</td><td>Hosted cloud plans</td><td>Hosted cloud plans</td><td>Subscription for hosted models</td></tr>
+</tbody>
+</table></div>
+<p>What each project says about itself, read on 17 November 2026. "Not stated" means its own pages did not say, not that it is missing.</p>
+<h2>Where My PAI is different</h2>
+<ul>
+<li><strong>No account and no server to set up.</strong> Install it, add a key (or point it at Ollama) and start. There is nothing to sign in to.</li>
+<li><strong>Phone and computer in step.</strong> Chats, files and keys sync between your own devices, encrypted end to end, linked by a code or a QR picture. The relay in between stores nothing.</li>
+<li><strong>It asks first.</strong> Anything that changes a file, sends an email or calls an MCP server is shown to you for a yes or no.</li>
+<li><strong>Small and plain.</strong> One MIT-licensed codebase for Android, Windows and Linux, with no paid plan.</li>
+</ul>
+<h2>Where the others go further</h2>
+<ul>
+<li><strong>Apple devices.</strong> My PAI has no macOS or iPhone app. Several of the apps above do.</li>
+<li><strong>Teams.</strong> My PAI is for one person. Open WebUI, LibreChat and AnythingLLM can be hosted for many users.</li>
+<li><strong>A browser version.</strong> My PAI is an installed app only.</li>
+<li><strong>Years of features.</strong> These projects are older and larger, with plug-ins, marketplaces and document tools My PAI does not have.</li>
+</ul>
+<h2>Sources</h2>
+<ul class="sources">
+<li><strong>Open WebUI</strong>: <a href="https://github.com/open-webui/open-webui" rel="nofollow noopener">github.com/open-webui/open-webui</a>, <a href="https://github.com/open-webui/open-webui/blob/main/LICENSE" rel="nofollow noopener">github.com/open-webui/open-webui/blob/main/LICENSE</a>, <a href="https://docs.openwebui.com/getting-started/quick-start/" rel="nofollow noopener">docs.openwebui.com/getting-started/quick-start/</a>, <a href="https://docs.openwebui.com/features/extensibility/mcp/" rel="nofollow noopener">docs.openwebui.com/features/extensibility/mcp/</a>, <a href="https://docs.openwebui.com/enterprise" rel="nofollow noopener">docs.openwebui.com/enterprise</a></li>
+<li><strong>LibreChat</strong>: <a href="https://github.com/LibreChat-AI/LibreChat" rel="nofollow noopener">github.com/LibreChat-AI/LibreChat</a>, <a href="https://github.com/LibreChat-AI/LibreChat/blob/main/LICENSE" rel="nofollow noopener">github.com/LibreChat-AI/LibreChat/blob/main/LICENSE</a>, <a href="https://www.librechat.ai/docs/features/mcp" rel="nofollow noopener">www.librechat.ai/docs/features/mcp</a>, <a href="https://www.librechat.ai/tos" rel="nofollow noopener">www.librechat.ai/tos</a></li>
+<li><strong>Jan</strong>: <a href="https://github.com/janhq/jan" rel="nofollow noopener">github.com/janhq/jan</a>, <a href="https://github.com/janhq/jan/blob/main/LICENSE" rel="nofollow noopener">github.com/janhq/jan/blob/main/LICENSE</a>, <a href="https://docs.jan.ai/desktop" rel="nofollow noopener">docs.jan.ai/desktop</a>, <a href="https://docs.jan.ai/desktop/integrations/mcp-servers" rel="nofollow noopener">docs.jan.ai/desktop/integrations/mcp-servers</a></li>
+<li><strong>AnythingLLM</strong>: <a href="https://github.com/Mintplex-Labs/anything-llm" rel="nofollow noopener">github.com/Mintplex-Labs/anything-llm</a>, <a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/LICENSE" rel="nofollow noopener">github.com/Mintplex-Labs/anything-llm/blob/master/LICENSE</a>, <a href="https://anythingllm.com/mobile" rel="nofollow noopener">anythingllm.com/mobile</a>, <a href="https://docs.anythingllm.com/mcp-compatibility/overview" rel="nofollow noopener">docs.anythingllm.com/mcp-compatibility/overview</a>, <a href="https://anythingllm.com/pricing" rel="nofollow noopener">anythingllm.com/pricing</a></li>
+<li><strong>LobeHub (LobeChat)</strong>: <a href="https://github.com/lobehub/lobehub" rel="nofollow noopener">github.com/lobehub/lobehub</a>, <a href="https://github.com/lobehub/lobehub/blob/main/LICENSE" rel="nofollow noopener">github.com/lobehub/lobehub/blob/main/LICENSE</a>, <a href="https://lobehub.com/downloads" rel="nofollow noopener">lobehub.com/downloads</a>, <a href="https://lobehub.com/pricing" rel="nofollow noopener">lobehub.com/pricing</a></li>
+<li><strong>Chatbox</strong>: <a href="https://github.com/chatboxai/chatbox" rel="nofollow noopener">github.com/chatboxai/chatbox</a>, <a href="https://github.com/chatboxai/chatbox/blob/main/LICENSE" rel="nofollow noopener">github.com/chatboxai/chatbox/blob/main/LICENSE</a>, <a href="https://chatboxai.app/en" rel="nofollow noopener">chatboxai.app/en</a>, <a href="https://docs.chatboxai.app/en/guides/mcp" rel="nofollow noopener">docs.chatboxai.app/en/guides/mcp</a></li>
+</ul>
+<h2>Found a mistake?</h2>
+<p>These projects change quickly. If anything here is wrong or out of date, please <a href="https://github.com/thegeekygamechanger/my-pai/issues/new/choose">open an issue</a> and it will be corrected.</p>
+<p>All product names, logos and trademarks belong to their owners. My PAI is not affiliated with, endorsed by or sponsored by any project named on this page.</p>
+</article>
+<footer>
+  <a href="whats-new.html">What's new</a><a href="compare.html">How it compares</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="open-source.html">Open source</a><a href="https://github.com/thegeekygamechanger/my-pai/blob/main/CONTRIBUTING.md">Contribute</a><a href="https://github.com/thegeekygamechanger/my-pai">GitHub</a>
+  <p>My PAI is open-source software, not affiliated with Anthropic, OpenAI, Google or any other AI service. Their product names are trademarks of their owners.</p>
+</footer>
+</div>
+
+</body>
+</html>
