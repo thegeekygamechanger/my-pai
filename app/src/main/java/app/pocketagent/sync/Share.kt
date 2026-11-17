@@ -34,7 +34,7 @@ import java.util.UUID
  * receives a copy of that single chat and nothing else. The chat is sent device to device while the sharer
  * keeps the share open, because the relay holds nothing to pick up later.
  */
-class ShareHost(private val g: Graph, private val chatId: Long) {
+class ShareHost(private val g: Graph, private val chatId: Long, /** A setup to hand over in place of a chat: servers, routines and instructions, never a secret. */ private val setup: JsonObject? = null) {
     val code: String = ShareCode.new()
     private val _served = MutableStateFlow(0)
     /** How many times the chat has been handed over. */
@@ -72,8 +72,8 @@ class ShareHost(private val g: Graph, private val chatId: Long) {
         val key = ShareSession.key(pair, guestPublic, wrap, guestPublic, hostPublic, rid) ?: return false
         val box = Sealer(key, "share/$rid")
         val dao = g.db.dao()
-        val chat = dao.chat(chatId) ?: return false
-        val msgs = dao.messages(chatId)
+        val chat = if (setup != null) null else dao.chat(chatId) ?: return false
+        val msgs = if (setup != null) emptyList() else dao.messages(chatId)
         link.send(buildJsonObject { put("from", id); put("rid", rid); put("t", "skey"); put("pub", Base64.getEncoder().encodeToString(hostPublic)) })
         // Every part is numbered inside its sealed box, so none can be dropped, repeated or reordered on the way without the receiver noticing.
         var n = 0
@@ -83,7 +83,8 @@ class ShareHost(private val g: Graph, private val chatId: Long) {
         }
         boxed(buildJsonObject {
             put("t", "schat"); put("count", msgs.size); put("by", g.settings.value?.name.orEmpty())
-            put("title", chat.title); put("agent", chat.agent); put("model", chat.model); put("effort", chat.effort); put("preview", chat.preview)
+            put("title", chat?.title ?: "A My PAI setup"); put("agent", chat?.agent == true); put("model", chat?.model.orEmpty()); put("effort", chat?.effort ?: "medium"); put("preview", chat?.preview.orEmpty())
+            if (setup != null) put("setup", setup)
         })
         val sent = HashSet<String>()
         for (m in msgs) {
@@ -109,7 +110,10 @@ class ShareHost(private val g: Graph, private val chatId: Long) {
 
 object ShareClient {
     /** Fetches and saves in one go. */
-    suspend fun open(g: Graph, code: String): Long? = fetch(g, code)?.let { save(g, it) }
+    suspend fun open(g: Graph, code: String): Long? = fetch(g, code)?.let { got -> got.setup?.let { g.addSetup(it, false); SETUP } ?: save(g, got) }
+
+    /** What [open] returns when the code led to a setup, which was added, instead of to a chat. */
+    const val SETUP = -1L
 
     /**
      * Fetches the chat behind a share code without saving it yet, so the person can be asked first.
@@ -214,6 +218,8 @@ object ShareClient {
 /** A chat received through a share code, held in memory until the person agrees to open it. */
 class SharedChat(val head: JsonObject, val messages: List<JsonObject>, val files: Map<String, ByteArray> = emptyMap()) {
     val title: String get() = head.str("title").orEmpty().ifBlank { "Shared chat" }
+    /** Not a chat but a setup (servers, routines, instructions) the sharer is handing over. */
+    val setup: JsonObject? get() = head.obj("setup")
     /** The sharer's name as they entered it in their app, or empty. */
     val by: String get() = head.str("by").orEmpty().trim()
 }

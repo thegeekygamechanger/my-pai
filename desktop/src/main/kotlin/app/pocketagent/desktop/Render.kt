@@ -87,10 +87,35 @@ fun main(args: Array<String>) {
                 println("scheduled for " + "%02d:%02d".format(at.hour, at.minute) + ", now " + java.time.LocalTime.now().withNano(0))
                 settle(400)
             }
+            s.startsWith("mcp=") -> {
+                // "mcp=<name>|<address>|<token>" adds an MCP server exactly as the Connections screen would (it is asked for its tools first).
+                val p = s.removePrefix("mcp=").split('|')
+                val problem = graph.saveMcpServer(app.pocketagent.ai.McpServer(id = p[0].lowercase().filter { it.isLetterOrDigit() }.take(12), name = p[0].replace('_', ' '), url = p[1]), p.getOrNull(2).orEmpty())
+                println("mcp " + p[0] + ": " + (problem ?: "connected"))
+                settle(400)
+            }
+            s.startsWith("set=") -> {
+                // "set=offline", "set=bridge", "set=serve", "set=backup:<service>:<model>", "set=lend:<server id>", "set=file:<path>:<text>", "set=routine:<title>": states a test needs, set as the screens would set them.
+                val p = s.removePrefix("set=").split(':', limit = 3)
+                when (p[0]) {
+                    "offline" -> graph.settingsStore.update { it.copy(offline = true) }
+                    "bridge" -> graph.settingsStore.update { it.copy(bridge = true) }
+                    "serve" -> graph.settingsStore.update { it.copy(serve = true) }
+                    "backup" -> graph.settingsStore.update { it.copy(backupProvider = p[1], backupModel = p[2]) }
+                    "lend" -> graph.changeMcpServer(p[1]) { it.copy(lend = true) }
+                    "file" -> graph.workspace.write(p[1], p[2].replace('_', ' ').replace("\\n", "\n"))
+                    "routine" -> graph.settingsStore.update {
+                        it.copy(schedules = it.schedules + app.pocketagent.data.Schedule(java.util.UUID.randomUUID().toString(), p[1].replace('_', ' '), "In one short line: name a kind of tea.", false, 9, 0, "never", 1, createdAt = System.currentTimeMillis(), steps = listOf("Now, in one short line, say how to brew it.")))
+                    }
+                }
+                settle(400)
+            }
             s == "state" -> {
                 // Prints the chats and scheduled tasks as they are stored, for a test to read.
                 val chats = graph.dao.allChats().filter { it.title.isNotBlank() }
                 for (c in chats) println("CHAT \"" + c.title + "\" messages=" + graph.dao.messages(c.id).size + " preview=" + c.preview.take(80).replace('\n', ' '))
+                for (c in graph.activity.recent(20)) println("CALL " + c.server + " | " + c.tool + " | ok=" + c.ok + " | from=" + c.from + " | " + c.summary.take(70))
+                println("SERVE token=" + (graph.serveToken ?: "") + " port=" + (graph.settings.value?.servePort ?: 0) + " problem=" + graph.serveProblem.value)
                 for (t in graph.settings.value?.schedules.orEmpty()) println("TASK \"" + t.title + "\" at " + "%02d:%02d".format(t.hour, t.minute) + " enabled=" + t.enabled + " lastRun=" + (if (t.lastRun > 0) java.time.Instant.ofEpochMilli(t.lastRun).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0).toString() else "never"))
                 println("TIME " + java.time.LocalTime.now().withNano(0))
             }

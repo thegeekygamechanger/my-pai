@@ -43,8 +43,66 @@ data class McpServer(
     val tools: List<McpTool> = emptyList(),
     /** When the list of tools was last fetched. */
     val checkedAt: Long = 0,
+    /** When the name or the address was last changed, on whichever device: the newer copy wins between linked devices. */
+    val changedAt: Long = 0,
+    /** On a computer: linked devices may use this server's tools through the pairing. */
+    val lend: Boolean = false,
+    /** It arrived from a linked device, where it has a token. The token itself is never sent, so it has to be typed in here. */
+    val wantsToken: Boolean = false,
 ) {
     val local: Boolean get() = command.isNotBlank()
+}
+
+/**
+ * How the list of MCP servers travels between a person's linked devices: the name and the address of each
+ * server that is reached by an address, and when each was changed or removed. Never a token, never the list of
+ * tools, never a program's command line: a token is typed in again on each device, and a program belongs to
+ * the computer it is installed on.
+ */
+object McpSync {
+    @Serializable
+    class Entry(val id: String, val name: String, val url: String, val token: Boolean = false, val at: Long = 0)
+    @Serializable
+    class Wire(val servers: List<Entry> = emptyList(), val gone: Map<String, Long> = emptyMap())
+
+    class Merged(val servers: List<McpServer>, val gone: Map<String, Long>, val removed: List<String>, val changed: Boolean, /** This device holds something the sender does not. */ val ahead: Boolean)
+
+    fun pack(servers: List<McpServer>, gone: Map<String, Long>): String =
+        AppJson.encodeToString(Wire.serializer(), Wire(servers.filter { !it.local }.map { Entry(it.id, it.name, it.url, it.hasToken || it.wantsToken, it.changedAt) }, gone))
+
+    /** Each server and each removal is settled by itself: the newer wins. Returns null when [packed] cannot be read. */
+    fun merge(mine: List<McpServer>, myGone: Map<String, Long>, packed: String, now: Long = System.currentTimeMillis()): Merged? {
+        val theirs = runCatching { AppJson.decodeFromString(Wire.serializer(), packed) }.getOrNull() ?: return null
+        val gone = HashMap(myGone)
+        theirs.gone.forEach { (id, at) -> if (id.length <= 64 && at > (gone[id] ?: 0)) gone[id] = at }
+        gone.entries.removeAll { now - it.value > FORGET_MS }
+        val incoming = theirs.servers.filter { it.id.isNotBlank() && it.id.length <= 64 && it.url.length <= 2000 }.take(MAX_SYNCED).associateBy { it.id }
+        val removed = ArrayList<String>()
+        var changed = false
+        val out = ArrayList<McpServer>()
+        for (s in mine) {
+            if (s.local) { out += s; continue }
+            if ((gone[s.id] ?: -1) >= s.changedAt) { removed += s.id; changed = true; continue }
+            val e = incoming[s.id]
+            if (e != null && e.at > s.changedAt) {
+                val moved = e.url.trim() != s.url
+                // A new address is a new place: it is switched off until the person connects it here.
+                out += s.copy(name = e.name.take(40), url = e.url.trim(), changedAt = e.at, on = s.on && !moved, tools = if (moved) emptyList() else s.tools, wantsToken = e.token && !s.hasToken)
+                changed = true
+            } else out += s
+        }
+        val have = mine.map { it.id }.toSet()
+        for (e in incoming.values) if (e.id !in have && (gone[e.id] ?: -1) < e.at) {
+            // A server that arrives is listed but off: nothing is contacted until the person connects it on this device.
+            out += McpServer(id = e.id, name = e.name.take(40), url = e.url.trim(), on = false, changedAt = e.at, wantsToken = e.token)
+            changed = true
+        }
+        val ahead = out.any { !it.local && (incoming[it.id]?.at ?: -1) < it.changedAt } || gone.any { (id, at) -> (theirs.gone[id] ?: -1) < at }
+        return Merged(out, gone, removed, changed || gone != myGone, ahead)
+    }
+
+    const val MAX_SYNCED = 50
+    private const val FORGET_MS = 180L * 24 * 3600 * 1000
 }
 
 /** A program started on this computer that speaks MCP over its input and output, one JSON message a line. */
@@ -78,9 +136,9 @@ class Mcp(
     /** Plain http is only for development builds. */
     private val allowHttp: () -> Boolean = { false },
     private val appVersion: String = "1",
-    private val http: OkHttpClient = OkHttpClient.Builder().followSslRedirects(false).followRedirects(false)
+    private val http: OkHttpClient = OkHttpClient.Builder().guarded().followSslRedirects(false).followRedirects(false)
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(CALL_SECONDS, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS).build(),
-) {
+) : OutsideTools {
     private val links = ConcurrentHashMap<String, McpLink>()
 
     private class Named(val server: McpServer, val tool: McpTool)
@@ -88,7 +146,7 @@ class Mcp(
     /** The model's name for each switched-on tool of each switched-on server. Stable while the list is. */
     private fun named(): Map<String, Named> {
         val out = LinkedHashMap<String, Named>()
-        for (s in servers()) if (s.on) for (t in s.tools) if (t.on) {
+        for (s in servers()) if (s.on && (!Net.offline || s.local || Net.localUrl(s.url))) for (t in s.tools) if (t.on) {
             val base = ("mcp_" + slug(s.name).take(20) + "_" + slug(t.name)).take(60)
             var name = base
             var n = 2
@@ -98,7 +156,7 @@ class Mcp(
         return out
     }
 
-    fun specs(): List<ToolSpec> = named().map { (name, n) ->
+    override fun specs(): List<ToolSpec> = named().map { (name, n) ->
         ToolSpec(
             name,
             ("From the MCP server \"${n.server.name}\" (a third party the person connected). " + n.tool.description).take(MAX_DESCRIPTION),
@@ -106,18 +164,21 @@ class Mcp(
         )
     }
 
-    fun handles(name: String) = name.startsWith("mcp_")
+    override fun handles(name: String) = name.startsWith("mcp_")
     fun risk(name: String): Risk? = if (handles(name)) Risk.OUTWARD else null
 
     /** The server and tool behind one of the model's tool names, for the approval card and the timeline. */
-    fun origin(name: String): Pair<String, String>? = named()[name]?.let { it.server.name to it.tool.name }
-    fun describe(name: String): String? = if (!handles(name)) null else origin(name)?.let { "${it.first}: ${it.second}" } ?: "A tool that is no longer connected"
+    /** The model's name for one tool of one server, when both are switched on. */
+    fun nameOf(serverId: String, tool: String): String? = named().entries.firstOrNull { it.value.server.id == serverId && it.value.tool.name == tool }?.key
+
+    override fun origin(name: String): Pair<String, String>? = named()[name]?.let { it.server.name to it.tool.name }
+    override fun describe(name: String): String? = if (!handles(name)) null else origin(name)?.let { "${it.first}: ${it.second}" } ?: "A tool that is no longer connected"
 
     /** Calls the tool and returns what it answered as text. */
     /** Told after every call whether the server answered, so the screens can show which servers are connected. */
     @Volatile var onAnswer: ((serverId: String, ok: Boolean) -> Unit)? = null
 
-    fun run(name: String, input: JsonObject): String {
+    override fun run(name: String, input: JsonObject): String {
         val n = named()[name] ?: throw ToolError("That tool is not available: its server was removed or switched off.")
         val result = try {
             link(n.server).request("tools/call", buildJsonObject { put("name", n.tool.name); put("arguments", input) }, n.tool.name, parseObject(n.tool.schema), CALL_SECONDS)

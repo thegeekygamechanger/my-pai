@@ -17,6 +17,11 @@ import app.pocketagent.ai.ToolHost
 import app.pocketagent.ai.Weather
 import app.pocketagent.ai.WeatherNow
 import app.pocketagent.ai.Tools
+import app.pocketagent.ai.arr
+import app.pocketagent.ai.asObj
+import app.pocketagent.ai.bool
+import app.pocketagent.ai.str
+import app.pocketagent.data.Schedule
 import app.pocketagent.data.AppDb
 import app.pocketagent.data.Attachments
 import app.pocketagent.data.Blobs
@@ -87,7 +92,21 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         allowHttp = { platform.debug },
         appVersion = platform.versionName,
     )
-    val tools = Tools(workspace, memory, toolHost, integrations, media, mcp)
+    /** Every tool call made on this device. Kept here only: it is in no backup and is never synced. */
+    val activity = app.pocketagent.ai.ActivityLog(File(filesDir, "activity.jsonl"))
+    /** Tools a linked computer lends, and what this computer lends to linked devices. */
+    val bridge: app.pocketagent.sync.Bridge by lazy { app.pocketagent.sync.Bridge(this) }
+    private val lentTools = object : app.pocketagent.ai.OutsideTools {
+        override fun specs() = bridge.specs()
+        override fun handles(name: String) = bridge.handles(name)
+        override fun describe(name: String) = bridge.describe(name)
+        override fun origin(name: String) = bridge.origin(name)
+        override fun run(name: String, input: kotlinx.serialization.json.JsonObject) = bridge.run(name, input)
+    }
+    val tools = Tools(workspace, memory, toolHost, integrations, media, mcp, lentTools, app.pocketagent.data.UndoStore(File(filesDir, "undo")), activity)
+
+    /** Takes back the change one tool call made to a file, and lets linked devices know the file changed. */
+    fun undoTool(callId: String): String? = tools.undo(callId)?.also { sync.filesMayHaveChanged() }
     init { mcp.onAnswer = { id, ok -> mcpStatus.update { it + (id to if (ok) app.pocketagent.ai.McpStatus.CONNECTED else app.pocketagent.ai.McpStatus.FAILED) } } }
 
     private val runHost = object : RunHost {
@@ -258,20 +277,168 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         mcp.forget(clean.id)
         val saved = clean.copy(tools = tools, checkedAt = System.currentTimeMillis())
         mcpIs(saved.id, app.pocketagent.ai.McpStatus.CONNECTED)
-        settingsStore.update { s -> s.copy(mcpServers = if (s.mcpServers.any { it.id == saved.id }) s.mcpServers.map { if (it.id == saved.id) saved else it } else s.mcpServers + saved) }
+        val now = System.currentTimeMillis()
+        var listChanged = false
+        settingsStore.update { s ->
+            val old = s.mcpServers.firstOrNull { it.id == saved.id }
+            // A new server, a new name or a new address is news for the linked devices; a refreshed list of tools is not.
+            listChanged = !saved.local && (old == null || old.name != saved.name || old.url != saved.url || old.hasToken != saved.hasToken)
+            val kept = saved.copy(changedAt = if (listChanged) now else old?.changedAt ?: now, wantsToken = false)
+            s.copy(mcpServers = if (old != null) s.mcpServers.map { if (it.id == kept.id) kept else it } else s.mcpServers + kept, sharedRev = if (listChanged) now else s.sharedRev)
+        }
+        if (listChanged) sync.sharedSettingsChanged()
+        bridge.advertise()
         return null
     }
 
-    /** Switches a server, or one of its tools, on or off. Nothing is sent anywhere. */
+    /** Switches a server, or one of its tools, on or off. Nothing is sent to the server. */
     suspend fun changeMcpServer(id: String, change: (app.pocketagent.ai.McpServer) -> app.pocketagent.ai.McpServer) {
         settingsStore.update { s -> s.copy(mcpServers = s.mcpServers.map { if (it.id == id) change(it) else it }) }
+        bridge.advertise()
     }
 
     suspend fun removeMcpServer(id: String) {
         mcp.forget(id)
         mcpStatus.update { it - id }
         vault.write(app.pocketagent.ai.Mcp.tokenKey(id), null)
-        settingsStore.update { s -> s.copy(mcpServers = s.mcpServers.filter { it.id != id }) }
+        val now = System.currentTimeMillis()
+        var remote = false
+        settingsStore.update { s ->
+            remote = s.mcpServers.any { it.id == id && !it.local }
+            s.copy(mcpServers = s.mcpServers.filter { it.id != id }, mcpGone = if (remote) s.mcpGone + (id to now) else s.mcpGone, sharedRev = if (remote) now else s.sharedRev)
+        }
+        if (remote) sync.sharedSettingsChanged()
+        bridge.advertise()
+    }
+
+    /**
+     * Takes in the list of MCP servers a linked device sent: names and addresses, no tokens.
+     * @return true when this device holds a server or a removal the sender did not know of
+     */
+    suspend fun mergeMcp(packed: String): Boolean {
+        var ahead = false
+        var removed = emptyList<String>()
+        settingsStore.update { s ->
+            val m = app.pocketagent.ai.McpSync.merge(s.mcpServers, s.mcpGone, packed) ?: return@update s
+            ahead = m.ahead; removed = m.removed
+            if (m.changed) s.copy(mcpServers = m.servers, mcpGone = m.gone) else s
+        }
+        removed.forEach { id -> mcp.forget(id); mcpStatus.update { it - id }; vault.write(app.pocketagent.ai.Mcp.tokenKey(id), null) }
+        return ahead
+    }
+
+    // ---- My PAI as an MCP server for other programs on this computer
+
+    /** A program's request waiting for the person's yes or no. */
+    class ServeAsk(val what: String, val answer: kotlinx.coroutines.CompletableDeferred<Int>)
+    val serveAsk = MutableStateFlow<ServeAsk?>(null)
+    @Volatile private var serveTrustedUntil = 0L
+    private val serveLock = Any()
+    /** One question at a time; apart from [serveLock], so a question waiting for its answer holds nothing else up. */
+    private val askLock = Any()
+    private var server: app.pocketagent.ai.LocalServer? = null
+    /** What went wrong starting the local server, for the settings screen. */
+    val serveProblem = MutableStateFlow("")
+
+    /** Shows the request in the app and waits for the answer; no answer in a minute counts as no. */
+    private fun askToServe(what: String): Boolean = synchronized(askLock) {
+        if (System.currentTimeMillis() < serveTrustedUntil) return true
+        val ask = ServeAsk(what, kotlinx.coroutines.CompletableDeferred())
+        serveAsk.value = ask
+        val choice = runBlocking { kotlinx.coroutines.withTimeoutOrNull(SERVE_WAIT_MS) { ask.answer.await() } } ?: 0
+        serveAsk.value = null
+        if (choice == 2) serveTrustedUntil = System.currentTimeMillis() + SERVE_TRUST_MS
+        choice > 0
+    }
+
+    companion object {
+        /** How long a program's request waits for the person before it counts as refused. */
+        const val SERVE_WAIT_MS = 60_000L
+        /** "Allow for ten minutes". */
+        const val SERVE_TRUST_MS = 10 * 60_000L
+    }
+
+    val serveToken: String? get() = vault.read(app.pocketagent.ai.McpHost.TOKEN)
+
+    /** Starts or stops the local server to match the setting. Only a computer serves. */
+    private fun applyServe(on: Boolean, port: Int) = synchronized(serveLock) {
+        if (!platform.isDesktop || !on) { server?.close(); server = null; serveProblem.value = ""; return@synchronized }
+        if (server?.port == port) return@synchronized
+        server?.close(); server = null
+        if (serveToken == null) vault.write(app.pocketagent.ai.McpHost.TOKEN, app.pocketagent.ai.McpHost.newToken())
+        val host = app.pocketagent.ai.McpHost(workspace, memory, { settings.value?.schedules.orEmpty() }, ::askToServe, activity, platform.versionName)
+        server = runCatching { app.pocketagent.ai.LocalServer(port) { auth, origin, body -> host.handle(serveToken.orEmpty(), auth, origin, body) } }
+            .onFailure { serveProblem.value = "Could not listen on port $port. Another program may be using it." }.onSuccess { serveProblem.value = "" }.getOrNull()
+    }
+
+    /** A new token: every program that had the old one has to be given the new one. */
+    fun newServeToken() { vault.write(app.pocketagent.ai.McpHost.TOKEN, app.pocketagent.ai.McpHost.newToken()); serveTrustedUntil = 0 }
+
+    // ---- sharing a setup: MCP servers, routines and instructions, never a token
+
+    /** What this device would hand over: names and addresses of servers, routines and standing instructions. No token, no key, no program path. */
+    fun setupBundle(servers: Boolean, routines: Boolean, instructions: Boolean): kotlinx.serialization.json.JsonObject {
+        val s = settings.value ?: Settings()
+        return kotlinx.serialization.json.buildJsonObject {
+            put("v", kotlinx.serialization.json.JsonPrimitive(1))
+            if (servers) put("servers", kotlinx.serialization.json.JsonArray(s.mcpServers.filter { !it.local }.map { m ->
+                kotlinx.serialization.json.buildJsonObject { put("name", kotlinx.serialization.json.JsonPrimitive(m.name)); put("url", kotlinx.serialization.json.JsonPrimitive(m.url)); put("token", kotlinx.serialization.json.JsonPrimitive(m.hasToken || m.wantsToken)) }
+            }))
+            if (routines) put("routines", kotlinx.serialization.json.JsonArray(s.schedules.map { r ->
+                kotlinx.serialization.json.buildJsonObject {
+                    put("title", kotlinx.serialization.json.JsonPrimitive(r.title)); put("prompt", kotlinx.serialization.json.JsonPrimitive(r.prompt)); put("agent", kotlinx.serialization.json.JsonPrimitive(r.agent))
+                    put("steps", kotlinx.serialization.json.JsonArray(r.steps.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+                }
+            }))
+            if (instructions && s.customInstructions.isNotBlank()) put("instructions", kotlinx.serialization.json.JsonPrimitive(s.customInstructions))
+        }
+    }
+
+    private var setupShare: app.pocketagent.sync.ShareHost? = null
+
+    /** A fresh code under which the bundle can be fetched for ten minutes, exactly as a shared chat is. */
+    fun shareSetup(bundle: kotlinx.serialization.json.JsonObject): app.pocketagent.sync.ShareHost = synchronized(shares) {
+        setupShare?.let { old -> scope.launch { old.stop() } }
+        app.pocketagent.sync.ShareHost(this, -1, bundle).also { it.start(); setupShare = it }
+    }
+
+    /**
+     * Adds what a shared setup holds. Servers arrive switched off and without a token; routines arrive as ones
+     * to run by hand; instructions are added under the person's own, never in place of them.
+     * @return a line saying what was added
+     */
+    suspend fun addSetup(setup: kotlinx.serialization.json.JsonObject, instructions: Boolean): String {
+        val now = System.currentTimeMillis()
+        var servers = 0; var routines = 0; var instr = false
+        settingsStore.update { s ->
+            val known = s.mcpServers.map { it.url }.toSet()
+            val newServers = setup.arr("servers").orEmpty().mapNotNull { it.asObj() }.take(20).mapNotNull { o ->
+                val url = o.str("url")?.trim().orEmpty()
+                if (url in known || app.pocketagent.ai.Mcp.urlProblem(url, false) != null) null
+                else app.pocketagent.ai.McpServer(id = java.util.UUID.randomUUID().toString().take(12), name = o.str("name").orEmpty().take(40).ifBlank { "Server" }, url = url, on = false, changedAt = now, wantsToken = o.bool("token") == true)
+            }
+            val newRoutines = setup.arr("routines").orEmpty().mapNotNull { it.asObj() }.take(20).mapNotNull { o ->
+                val prompt = o.str("prompt")?.take(4000).orEmpty()
+                if (prompt.isBlank() || s.schedules.any { it.prompt == prompt }) null
+                else Schedule(
+                    id = java.util.UUID.randomUUID().toString(), title = o.str("title").orEmpty().take(80), prompt = prompt, agent = o.bool("agent") == true, repeat = "never", createdAt = now,
+                    steps = o.arr("steps").orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.take(4000) }.take(12),
+                )
+            }
+            val more = setup.str("instructions")?.trim()?.take(4000).orEmpty()
+            instr = instructions && more.isNotEmpty() && !s.customInstructions.contains(more)
+            servers = newServers.size; routines = newRoutines.size
+            s.copy(
+                mcpServers = s.mcpServers + newServers, schedules = s.schedules + newRoutines,
+                customInstructions = if (instr) listOf(s.customInstructions.trim(), more).filter { it.isNotEmpty() }.joinToString("\n") else s.customInstructions,
+                sharedRev = if (servers > 0 || instr) now else s.sharedRev,
+            )
+        }
+        if (servers > 0 || instr) sync.sharedSettingsChanged()
+        val parts = listOfNotNull(
+            "$servers MCP server${if (servers == 1) "" else "s"}".takeIf { servers > 0 }, "$routines routine${if (routines == 1) "" else "s"}".takeIf { routines > 0 }, "the instructions".takeIf { instr },
+        )
+        return if (parts.isEmpty()) "Nothing new: you already have all of it." else "Added " + parts.joinToString(", ") + "." + (if (servers > 0) " Connect each server in Settings, Connections." else "")
     }
 
     suspend fun setConnection(values: Map<String, String?>) {
@@ -341,6 +508,9 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
         blobs.deleteAll()
         workspace.root.deleteRecursively(); workspace.root.mkdirs()
         memory.root.deleteRecursively(); memory.root.mkdirs()
+        // The record of what tools did, and the copies kept for undoing, go with the rest.
+        activity.clear()
+        File(filesDir, "undo").deleteRecursively()
         sync.filesMayHaveChanged()
     }
 
@@ -355,6 +525,17 @@ class Graph(val platform: Platform, val vault: Vault, val settingsStore: Setting
             }
             sync.start()
             scheduler.start()
+        }
+        // Offline mode and the local server follow their settings from the first moment and whenever they change.
+        scope.launch {
+            settingsStore.flow.collect { s ->
+                app.pocketagent.ai.Net.offline = s.offline
+                runCatching { applyServe(s.serve, s.servePort) }
+            }
+        }
+        scope.launch {
+            var last: Pair<Boolean, Boolean>? = null
+            settingsStore.flow.collect { s -> val now = s.bridge to s.offline; if (now != last) { last = now; bridge.advertise() } }
         }
         scope.launch {
             var lastCity = ""

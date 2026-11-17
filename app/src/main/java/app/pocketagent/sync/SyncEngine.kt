@@ -169,12 +169,12 @@ class SyncEngine(private val g: Graph) {
             try {
                 l.run(
                     onOnline = { on -> _status.update { it.copy(online = on, peers = if (on) it.peers else emptyList(), error = "") } },
-                    onOpen = { sendHello(); sendInventory() },
+                    onOpen = { sendHello(); sendInventory(); g.bridge.advertise(); g.bridge.ask() },
                     onPeers = { ids ->
                         val before = _status.value.peers
                         _status.update { it.copy(peers = ids) }
                         // Someone new is here: tell them who we are and what we have.
-                        if (ids.any { it !in before }) { sendHello(); sendInventory() }
+                        if (ids.any { it !in before }) { sendHello(); sendInventory(); g.bridge.advertise(); g.bridge.ask() }
                     },
                     onMessage = { m -> runCatching { handle(m) } },
                 )
@@ -191,6 +191,9 @@ class SyncEngine(private val g: Graph) {
         val l = link ?: return
         l.send(buildJsonObject { put("from", me); build() }, droppable)
     }
+
+    /** For the bridge between linked devices: a message that travels in the same sealed room as everything else. */
+    fun sendTo(build: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit) = send(build)
 
     // ---- who is linked
 
@@ -320,6 +323,8 @@ class SyncEngine(private val g: Graph) {
             put("custom", AppJson.encodeToString(ListSerializer(Provider.serializer()), s.customProviders))
             putJsonObject("keys") { g.providers().forEach { p -> g.keyFor(p.id)?.let { put(p.id, it) } } }
             putJsonObject("conn") { Integrations.SECRETS.forEach { n -> g.vault.read(n)?.let { put(n, it) } } }
+            // MCP servers: names and addresses only. Their tokens stay in each device's own vault and are typed in again there.
+            put("mcp", app.pocketagent.ai.McpSync.pack(s.mcpServers, s.mcpGone))
         })
     }
 
@@ -486,6 +491,7 @@ class SyncEngine(private val g: Graph) {
             "live" -> applyLive(m)
             "liveend" -> raw.chatByUid(m.str("cu").orEmpty())?.let { c -> remoteSeen.remove(c.id); _remoteRuns.update { it - c.id } }
             "stop" -> raw.chatByUid(m.str("cu").orEmpty())?.let { g.runs.stop(it.id) }
+            "bt", "bq", "bc", "br" -> g.bridge.handle(m, from)
             "decide" -> raw.chatByUid(m.str("cu").orEmpty())?.let { c -> runCatching { Decision.valueOf(m.str("d").orEmpty()) }.getOrNull()?.let { g.runs.decide(c.id, it) } }
         }
     }
@@ -554,6 +560,8 @@ class SyncEngine(private val g: Graph) {
 
     private suspend fun applyShared(m: JsonObject) {
         val rev = m.long("rev") ?: 0
+        // The list of MCP servers is settled server by server, whichever device's other settings are the newer.
+        val ahead = m.str("mcp")?.let { g.mergeMcp(it) } == true
         val s = settings()
         if (rev <= s.sharedRev) return
         val custom = m.str("custom")?.let { runCatching { AppJson.decodeFromString(ListSerializer(Provider.serializer()), it) }.getOrNull() } ?: s.customProviders
@@ -570,6 +578,8 @@ class SyncEngine(private val g: Graph) {
                 provider = m.str("provider") ?: it.provider, model = m.str("model") ?: it.model, customProviders = custom, sharedRev = rev, onboarded = it.onboarded || keys.isNotEmpty(),
             )
         }
+        // This device knew of a server, or of a removal, that the sender did not: send the settled list back.
+        if (ahead) { g.settingsStore.update { it.copy(sharedRev = System.currentTimeMillis()) }; sendShared() }
         // Fetch model lists for services that just arrived, in the background.
         g.scope.launch { g.connected().filter { g.models(it.id).isEmpty() || it.kind != "anthropic" && g.settings.value?.models?.containsKey(it.id) != true }.forEach { p -> runCatching { g.refreshModels(p) } } }
     }

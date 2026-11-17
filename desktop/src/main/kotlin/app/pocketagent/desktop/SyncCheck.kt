@@ -24,8 +24,70 @@ import kotlin.system.exitProcess
  * Simulated devices link, sync and share through a real relay, and every step is checked. Run it against a
  * local relay: `PORT=18790 node server/relay.mjs` then `./gradlew :desktop:syncCheck`.
  */
+/** MCP servers between linked devices, and the bridge that lets one device use a tool that lives on another. Kept out of [main], which is long enough. */
+private suspend fun bridgeChecks(a: Graph, b: Graph, base: File, check: (String, Boolean) -> Unit, until: suspend (Long, suspend () -> Boolean) -> Boolean) {
+    // --- MCP servers between linked devices.
+    fun mcpOn(g: Graph, id: String) = g.settings.value?.mcpServers?.firstOrNull { it.id == id }
+    check("an MCP server's name and address reach the other device, switched off", until(10_000) { mcpOn(b, "m1")?.let { it.name == "Weather" && it.url == "https://mcp.example/weather" && !it.on && it.tools.isEmpty() } == true })
+    check("its token does not: the other device is told one is needed", b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && mcpOn(b, "m1")?.let { it.wantsToken && !it.hasToken } == true)
+    check("the token is still on the device it was typed on", a.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == "mcp-secret-token-0000")
+
+    // --- The bridge: B uses a tool that only exists on A. The server A lends is a real one on this machine
+    // (My PAI's own read-only server over another folder), reached by its address with a token.
+    val deskFiles = app.pocketagent.data.Workspace(File(base, "desk-files")).also { it.write("hello.txt", "BRIDGE-OK from the computer") }
+    val deskHost = app.pocketagent.ai.McpHost(deskFiles, app.pocketagent.data.Workspace(File(base, "desk-mem")), { emptyList() }, { true })
+    val deskToken = app.pocketagent.ai.McpHost.newToken()
+    val deskServer = app.pocketagent.ai.LocalServer(0) { auth, origin, body -> deskHost.handle(deskToken, auth, origin, body) }
+    val problem = a.saveMcpServer(app.pocketagent.ai.McpServer(id = "desk1", name = "Desk files", url = "http://127.0.0.1:${deskServer.port}/mcp"), deskToken)
+    check("A connects a server of its own" + (problem?.let { " ($it)" } ?: ""), problem == null && until(5_000) { mcpOn(a, "desk1")?.tools?.size == 5 })
+    check("it is listed on B too, without its token", until(10_000) { mcpOn(b, "desk1")?.let { !it.on && it.wantsToken } == true } && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("desk1")) == null)
+    check("with the bridge off, A lends nothing", b.bridge.specs().isEmpty())
+    a.settingsStore.update { it.copy(bridge = true) }
+    check("with the bridge on but no server marked, still nothing", !until(1500) { b.bridge.specs().isNotEmpty() })
+    a.changeMcpServer("desk1") { it.copy(lend = true) }
+    check("a server marked as lent is offered to B", until(10_000) { b.bridge.specs().size == 5 })
+    val lentName = b.bridge.specs().firstOrNull { it.name.endsWith("read_file") }?.name.orEmpty()
+    check("B counts it as leaving the device, so every call is asked about", b.tools.risk(lentName, kotlinx.serialization.json.JsonObject(emptyMap())) == app.pocketagent.ai.Risk.OUTWARD && b.tools.origin(lentName)?.second == "read_file")
+    val overBridge = kotlinx.coroutines.withContext(Dispatchers.IO) { b.tools.run(0, lentName, app.pocketagent.ai.parseObject("""{"path":"hello.txt"}""")!!) }
+    check("B reads a file that is only on A, through the bridge", !overBridge.isError && overBridge.text.contains("BRIDGE-OK"))
+    check("A's activity log has the call and who asked", a.activity.recent().any { it.tool == "read_file" && it.server == "Desk files" && it.from.isNotEmpty() })
+    val missing = kotlinx.coroutines.withContext(Dispatchers.IO) { b.tools.run(0, lentName, app.pocketagent.ai.parseObject("""{"path":"../../etc/passwd"}""")!!) }
+    check("it cannot reach outside what was lent", missing.isError && !missing.text.contains("root:"))
+    a.settingsStore.update { it.copy(bridge = false) }
+    check("switching the bridge off takes everything back", until(10_000) { b.bridge.specs().isEmpty() })
+    val after = kotlinx.coroutines.withContext(Dispatchers.IO) { b.tools.run(0, lentName, app.pocketagent.ai.parseObject("""{"path":"hello.txt"}""")!!) }
+    check("and a call made anyway is refused", after.isError && !after.text.contains("BRIDGE-OK"))
+    a.removeMcpServer("desk1")
+    check("a server removed on A disappears from B", until(10_000) { mcpOn(b, "desk1") == null } && mcpOn(b, "m1") != null)
+    deskServer.close()
+}
+
+/** Handing a setup (servers, routines, instructions) to someone who is not linked. */
+private suspend fun setupChecks(a: Graph, newcomer: Graph, check: (String, Boolean) -> Unit) {
+    // --- Sharing a setup: servers, routines and instructions under a code, never a secret.
+    a.settingsStore.update { it.copy(customInstructions = "Be brief", schedules = listOf(app.pocketagent.data.Schedule("r1", "Morning brief", "Top news in five points", steps = listOf("Then today's weather")))) }
+    delay(200)
+    val bundle = a.setupBundle(servers = true, routines = true, instructions = true)
+    check("a setup holds names, addresses, routines and instructions", bundle.toString().let { it.contains("Weather") && it.contains("Morning brief") && it.contains("Be brief") })
+    check("and no token and no key", bundle.toString().let { !it.contains("mcp-secret-token") && !it.contains("sk-ant-test") })
+    val setupHost = a.shareSetup(bundle)
+    delay(600)
+    val offer = ShareClient.fetch(newcomer, setupHost.code)
+    check("it arrives as a setup, not as a chat", offer?.setup != null && offer.messages.isEmpty() && offer.by == "Asha")
+    check("nothing is added until the person agrees", newcomer.settings.value?.mcpServers.isNullOrEmpty() && newcomer.settings.value?.schedules.isNullOrEmpty())
+    val setupSaid = offer?.setup?.let { newcomer.addSetup(it, instructions = false) }.orEmpty()
+    val ns = newcomer.settingsStore.flow.first()
+    check("the server arrives switched off, without a token, and nothing was contacted" + " ($setupSaid)", ns.mcpServers.singleOrNull()?.let { it.name == "Weather" && !it.on && !it.hasToken && it.wantsToken && it.tools.isEmpty() } == true)
+    check("the routine arrives with its steps, to be run by hand", ns.schedules.singleOrNull()?.let { it.title == "Morning brief" && it.steps == listOf("Then today's weather") && it.repeat == "never" } == true)
+    check("their instructions are not added unless asked for", ns.customInstructions.isEmpty())
+    check("adding the same setup again adds nothing twice", offer?.setup?.let { newcomer.addSetup(it, instructions = true) }.orEmpty().contains("instructions") && newcomer.settingsStore.flow.first().let { it.mcpServers.size == 1 && it.schedules.size == 1 && it.customInstructions == "Be brief" })
+    setupHost.stop()
+}
+
 fun main(args: Array<String>) {
     val base = File(args.getOrElse(0) { "build/sync-check" }).apply { deleteRecursively(); mkdirs() }
+    // The check lends a server that runs on this machine, at a plain http address: only a development build talks to one.
+    System.setProperty("pocketagent.debug", "1")
     var failed = 0
     fun check(name: String, ok: Boolean) { println((if (ok) "PASS  " else "FAIL  ") + name); if (!ok) failed++ }
     runBlocking(Dispatchers.Default) {
@@ -62,9 +124,9 @@ fun main(args: Array<String>) {
         a.memory.write("me.md", "likes tea")
         a.vault.write(Providers.vaultKey(Providers.ANTHROPIC), "sk-ant-test-key-000000000000")
         a.updateShared { it.copy(customInstructions = "Be brief", name = "Sam", onboarded = true) }
-        // An MCP server and its token belong to the device they were typed on.
+        // An MCP server: its name and address will reach the linked devices, its token never.
         a.vault.write(app.pocketagent.ai.Mcp.tokenKey("m1"), "mcp-secret-token-0000")
-        a.updateShared { it.copy(mcpServers = listOf(app.pocketagent.ai.McpServer(id = "m1", name = "Weather", url = "https://mcp.example/weather", hasToken = true))) }
+        a.updateShared { it.copy(mcpServers = listOf(app.pocketagent.ai.McpServer(id = "m1", name = "Weather", url = "https://mcp.example/weather", hasToken = true, changedAt = System.currentTimeMillis()))) }
         val att = File(a.attach.dir, "pic.jpg").apply { parentFile.mkdirs(); writeBytes(ByteArray(300_000) { (it % 251).toByte() }) }
         a.dao.insert(Msg(chatId = first, role = "user", content = """[{"type":"image","source":{"type":"local","path":"att/pic.jpg","media_type":"image/jpeg"}},{"type":"text","text":"and this photo"}]""", createdAt = System.currentTimeMillis()))
 
@@ -116,8 +178,8 @@ fun main(args: Array<String>) {
         check("a chat deleted on A disappears on B", until { "Groceries" !in titles(b) })
         b.updateShared { it.copy(customInstructions = "Be thorough") }
         check("changed instructions reach A", until { a.settings.value?.customInstructions == "Be thorough" })
-        check("an MCP server and its token stay on the device they were added on", b.settings.value?.mcpServers.isNullOrEmpty() && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null)
-        check("and are still there on that device", a.settings.value?.mcpServers?.singleOrNull()?.name == "Weather" && a.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == "mcp-secret-token-0000")
+        bridgeChecks(a, b, base, ::check) { ms, cond -> until(ms, cond) }
+        fun mcpOn(g: Graph, id: String) = g.settings.value?.mcpServers?.firstOrNull { it.id == id }
 
         // --- Incognito: a chat that stays on the device it was written on, and is gone when it is left.
         val secret = a.newIncognitoChat()
@@ -142,13 +204,13 @@ fun main(args: Array<String>) {
         check("A gets what B did meanwhile", until { "Written offline" in titles(a) })
         check("both ends hold the same chats", until { titles(a) == titles(b) })
         check("a chat deleted earlier stays deleted", "Groceries" !in titles(a) && "Groceries" !in titles(b))
-        check("after unlinking and linking again the MCP server is still on one device only", b.settings.value?.mcpServers.isNullOrEmpty() && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && a.settings.value?.mcpServers?.size == 1)
+        check("after unlinking and linking again B still has the server's name and still no token", mcpOn(b, "m1") != null && b.vault.read(app.pocketagent.ai.Mcp.tokenKey("m1")) == null && a.settings.value?.mcpServers?.size == 1)
 
         // --- The relay and anyone listening see only ciphertext.
         spyCall.cancel()
         val heard = synchronized(overheard) { overheard.toString() }
         check("the eavesdropper received traffic", heard.length > 1000)
-        check("none of it is readable (no chat text, file text or key)", !heard.contains("MARKER-PLAINTEXT") && !heard.contains("Trip plan") && !heard.contains("sk-ant-test") && !heard.contains("mcp-secret-token") && !heard.contains("mcp.example"))
+        check("none of it is readable (no chat text, file text or key)", !heard.contains("MARKER-PLAINTEXT") && !heard.contains("Trip plan") && !heard.contains("sk-ant-test") && !heard.contains("mcp-secret-token") && !heard.contains("mcp.example") && !heard.contains("BRIDGE-OK") && !heard.contains("Desk files"))
 
         // --- Up to five devices.
         val more = listOf("c", "d", "e").map { device(it) }
@@ -211,6 +273,8 @@ fun main(args: Array<String>) {
         check("the sharer counted the hand-over", host.served.value >= 1)
         host.stop()
         check("a closed share can no longer be opened", ShareClient.open(device("late"), host.code) == null)
+
+        setupChecks(a, device("newcomer"), ::check)
     }
     println(if (failed == 0) "ALL CHECKS PASSED" else "$failed CHECK(S) FAILED")
     exitProcess(if (failed == 0) 0 else 1)
