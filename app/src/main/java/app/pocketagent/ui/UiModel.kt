@@ -167,7 +167,8 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
         if (!liveSaved && run.live.isNotEmpty()) liveRows(if (liveId.isNotEmpty()) "a$liveId" else "live", run, showThinking, rows)
         compact(rows, 0, showThinking)
         val last = run.live.lastOrNull()
-        val writing = !liveSaved && last != null && last.type == "text" && !last.done
+        // Words arriving count as writing, whether they are the reply itself or a file being written.
+        val writing = !liveSaved && last != null && !last.done && (last.type == "text" || last.draft.isNotBlank())
         if (run.phase == Phase.RETRYING) rows += UiRow.Status("status", run.status, true)
         // Unless words are arriving right now, or the person is being asked something, one animated line says it is on its way.
         else if (!writing && run.pending == null && run.phase != Phase.APPROVAL) rows += UiRow.Status("status", "", false, mood(run))
@@ -223,8 +224,17 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
         if (sources.isNotEmpty()) rows += UiRow.Sources("$key:src", sources.values.toList())
     }
 
+    /** The text of a file that is being written, as rows to read: prose as it will look, anything else as code. */
+    private fun draftRows(key: String, path: String, text: String, rows: MutableList<UiRow>) {
+        val prose = path.endsWith(".md", true) || path.endsWith(".txt", true) || !path.contains('.')
+        val blocks = if (prose) Markdown.parse(text) else listOf(MdBlock.Code(path.substringAfterLast('.', ""), text))
+        blocks.forEachIndexed { j, blk -> rows += UiRow.Md("$key:d$j", blk, j == blocks.lastIndex) }
+    }
+
     private fun liveRows(key: String, run: RunState, showThinking: Boolean, rows: MutableList<UiRow>) {
         val live = run.live
+        // What a file being written looks like so far goes under everything else, where the newest text always is.
+        val extra = ArrayList<UiRow>()
         val answered = live.filter { it.type.endsWith("_tool_result") }.associateBy { it.id }
         live.forEachIndexed { i, b ->
             val isLast = i == live.lastIndex
@@ -242,7 +252,10 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
                         run.pending?.toolUseId == b.id -> ToolState.WAITING
                         else -> ToolState.RUNNING
                     }
-                    rows += UiRow.Tool("$key:$i", b.id, b.name, describe(b.name, input), false, state, if (b.done) pretty(input) else b.inputPreview, outcome?.text.orEmpty(), media = if (state == ToolState.DONE) mediaIn(outcome?.text.orEmpty()) else emptyList())
+                    // A file on its way: the row names it as soon as its path is known, and its text follows below as it is written.
+                    val title = if (!b.done && b.draftPath.isNotBlank()) describe(b.name, JsonObject(mapOf("path" to JsonPrimitive(b.draftPath)))) else describe(b.name, input)
+                    if (!b.done && b.draft.isNotBlank()) draftRows("$key:$i", b.draftPath, b.draft, extra)
+                    rows += UiRow.Tool("$key:$i", b.id, b.name, title, false, state, if (b.done) pretty(input) else b.inputPreview, outcome?.text.orEmpty(), media = if (state == ToolState.DONE) mediaIn(outcome?.text.orEmpty()) else emptyList())
                 }
                 "server_tool_use", "mcp_tool_use" -> {
                     val input = parseObject(b.inputPreview) ?: JsonObject(emptyMap())
@@ -252,6 +265,7 @@ class RowBuilder(private val describe: (String, JsonObject) -> String, private v
                 }
             }
         }
+        rows += extra
     }
 
     /**

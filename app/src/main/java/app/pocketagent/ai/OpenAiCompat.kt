@@ -186,7 +186,10 @@ class OpenAiAssembler : LiveReply {
     override fun live(): List<LiveBlock> = buildList {
         if (reasoning.isNotBlank()) add(LiveBlock("thinking", text = reasoning.toString(), done = text.isNotEmpty() || calls.isNotEmpty() || finished))
         if (text.isNotEmpty()) add(LiveBlock("text", text = text.toString(), done = calls.isNotEmpty() || finished))
-        calls.values.forEach { c -> add(LiveBlock("tool_use", name = c.name, id = c.id, inputPreview = c.args.toString().take(600), done = finished)) }
+        calls.values.forEach { c ->
+            val draft = if (finished) null else Draft.of(c.name, c.args)
+            add(LiveBlock("tool_use", name = c.name, id = c.id, inputPreview = c.args.toString().take(600), done = finished, draftPath = draft?.first.orEmpty(), draft = draft?.second.orEmpty()))
+        }
     }
 
     @Synchronized override fun partialText(): String = text.toString().trim()

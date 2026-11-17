@@ -141,8 +141,13 @@ class RunManager(
         return c.isNotEmpty() && c.all { (it as? JsonObject)?.str("type") == "tool_result" }
     }
 
+    private val MENTION_LINE = Regex("^@(github|gmail|mcp)\\b", RegexOption.IGNORE_CASE)
+
     private fun titleFrom(text: String): String {
-        val line = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        // A chat is named after what was asked, not after the "@GitHub" or "@mcp" line that says where to look,
+        // unless that line is all there is.
+        val lines = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        val line = lines.firstOrNull { !MENTION_LINE.containsMatchIn(it) } ?: lines.firstOrNull().orEmpty()
         return when {
             line.isEmpty() -> "New chat"
             line.length <= 48 -> line
@@ -211,8 +216,8 @@ class RunManager(
             val server = Providers.serverTools(provider)
             val cfg = RunConfig(
                 provider = provider, model = model, effort = chat.effort, maxTokens = minOf(s.maxOutput, cap), customInstructions = s.instructions(),
-                // Work on a Claude model always has the code sandbox: it is how documents are converted and charts and office files are made.
-                agent = chat.agent, web = chat.web && server, code = chat.agent && server, memory = chat.memory, fast = chat.fast && server,
+                // A Claude model always has the code sandbox, in Chat as in Work: it is how documents are converted and charts and office files are made.
+                agent = chat.agent, web = chat.web && server, code = server, memory = chat.memory, fast = chat.fast && server,
                 fallbacks = s.fallbacks, compaction = s.compaction,
             )
             // Reasoning blocks from earlier turns only stay valid while the system prompt and tools are unchanged.
@@ -414,7 +419,16 @@ class RunManager(
     /** Keeps the text that had arrived when a reply was stopped or the connection failed. */
     private suspend fun savePartial(chatId: Long) {
         val asm = assemblers.remove(chatId) ?: return
-        val text = asm.partialText()
+        // A file that was being written when the reply was stopped is not thrown away: what had arrived is kept in the
+        // chat, as text, so it can be read. Nothing is written to the workspace: a half-finished file is not saved over a whole one.
+        val draft = asm.live().lastOrNull { it.type == "tool_use" && !it.done && it.draft.isNotBlank() }
+        val kept = draft?.let { d ->
+            val name = d.draftPath.ifBlank { "a file" }
+            val plain = name.endsWith(".md", true) || name.endsWith(".txt", true) || !name.contains('.')
+            "**Stopped while writing ${if (d.draftPath.isBlank()) name else "`$name`"}.** It was not saved. This is what had been written:\n\n" +
+                (if (plain) d.draft else "```" + name.substringAfterLast('.', "") + "\n" + d.draft + "\n```")
+        }
+        val text = listOf(asm.partialText(), kept.orEmpty()).filter { it.isNotBlank() }.joinToString("\n\n")
         if (text.isBlank()) return
         val content = JsonArray(listOf(buildJsonObject { put("type", "text"); put("text", text) }))
         dao.insert(Msg(chatId = chatId, role = "assistant", content = content.toString(), createdAt = System.currentTimeMillis(), apiId = asm.id, model = asm.model, stopReason = "stopped"))

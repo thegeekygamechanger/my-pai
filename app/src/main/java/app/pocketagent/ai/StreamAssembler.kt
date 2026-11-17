@@ -29,7 +29,54 @@ data class LiveBlock(
     val inputPreview: String = "",
     val done: Boolean = false,
     val raw: JsonObject? = null,
+    /** For a file that is being written right now: its path and the text that has arrived so far. */
+    val draftPath: String = "",
+    val draft: String = "",
 )
+
+/**
+ * What a tool call that is still arriving is going to write, read out of its unfinished JSON. This is what lets a
+ * file be read while it is being written, and kept if the writing is stopped half-way.
+ */
+object Draft {
+    private val KEYS = mapOf("write_file" to "content", "edit_file" to "new_text", Tools.MEMORY to "file_text")
+
+    /** The path and the text so far, or null if this tool writes no text or none has arrived yet. */
+    fun of(tool: String, partialJson: CharSequence): Pair<String, String>? {
+        val key = KEYS[tool] ?: return null
+        val text = string(partialJson, key)?.takeIf { it.isNotEmpty() } ?: return null
+        return string(partialJson, "path").orEmpty() to text
+    }
+
+    /** The value of a string field, as far as it has arrived: escapes are undone, and a half-arrived escape at the end is left off. */
+    fun string(json: CharSequence, key: String): String? {
+        val start = Regex("(?<!\\\\)\"" + Regex.escape(key) + "\"\\s*:\\s*\"").find(json)?.range?.last?.plus(1) ?: return null
+        val out = StringBuilder()
+        var i = start
+        while (i < json.length) {
+            val c = json[i]
+            when {
+                c == '"' -> return out.toString()
+                c != '\\' -> out.append(c)
+                i + 1 >= json.length -> return out.toString()
+                else -> {
+                    i++
+                    when (val e = json[i]) {
+                        'n' -> out.append('\n'); 't' -> out.append('\t'); 'r' -> out.append('\r'); 'b' -> out.append('\b'); 'f' -> out.append('\u000C')
+                        'u' -> {
+                            if (i + 4 >= json.length) return out.toString()
+                            json.substring(i + 1, i + 5).toIntOrNull(16)?.let { out.append(it.toChar()) }
+                            i += 4
+                        }
+                        else -> out.append(e)
+                    }
+                }
+            }
+            i++
+        }
+        return out.toString()
+    }
+}
 
 /**
  * Rebuilds the reply from server-sent events. Every block is kept as the JSON the service sent
@@ -142,7 +189,11 @@ class StreamAssembler : LiveReply {
         when {
             b.type == "text" -> LiveBlock("text", text = b.strings["text"]?.toString() ?: b.base.str("text").orEmpty(), done = b.done)
             b.type == "thinking" -> LiveBlock("thinking", text = b.strings["thinking"]?.toString() ?: b.base.str("thinking").orEmpty(), done = b.done)
-            isToolCall(b.type) -> LiveBlock(b.type, name = b.base.str("name").orEmpty(), id = b.base.str("id").orEmpty(), inputPreview = b.partialJson.toString().take(600), done = b.done)
+            isToolCall(b.type) -> {
+                val name = b.base.str("name").orEmpty()
+                val draft = if (b.done) null else Draft.of(name, b.partialJson)
+                LiveBlock(b.type, name = name, id = b.base.str("id").orEmpty(), inputPreview = b.partialJson.toString().take(600), done = b.done, draftPath = draft?.first.orEmpty(), draft = draft?.second.orEmpty())
+            }
             else -> LiveBlock(b.type, done = b.done, raw = if (b.done) b.base else null, id = b.base.str("tool_use_id").orEmpty())
         }
     }
